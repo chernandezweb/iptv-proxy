@@ -26,9 +26,11 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"io/ioutil"
 
 	"github.com/pierre-emmanuelJ/iptv-proxy/pkg/config"
 	xtream "github.com/tellytv/go.xtream-codes"
+	"encoding/json"
 )
 
 const (
@@ -204,14 +206,57 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 			}
 		}
 	case getSerieInfo:
-		httpcode, err = validateParams(q, "series_id")
-		if err != nil {
-			return
-		}
-		respBody, err = c.GetSeriesInfo(q["series_id"][0])
-		if err != nil {
-			log.Printf("[xtream-proxy] Error getting series info for series_id %s: %v", q["series_id"][0], err)
-		}
+			httpcode, err = validateParams(q, "series_id")
+			if err != nil {
+				return
+			}
+			seriesID := q["series_id"][0]
+			respBody, err = c.GetSeriesInfo(seriesID)
+			if err != nil {
+				log.Printf("[xtream-proxy] Error getting series info for series_id %s: %v", seriesID, err)
+
+				// Tolerant fallback: perform a raw HTTP GET to the player_api.php and return
+				// the parsed JSON when typed unmarshal in the library fails (often due
+				// to mixed number/string types for numeric fields).
+				rawURL := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_series_info&series_id=%s", c.BaseURL, c.Username, c.Password, url.QueryEscape(seriesID))
+				req, rerr := http.NewRequest("GET", rawURL, nil)
+				if rerr != nil {
+					log.Printf("[xtream-proxy] Error creating raw request for series info: %v", rerr)
+					// return original error
+					return
+				}
+				req.Header.Set("User-Agent", c.UserAgent)
+				req = req.WithContext(c.Context)
+
+				resp, derr := c.HTTP.Do(req)
+				if derr != nil {
+					log.Printf("[xtream-proxy] Error performing raw request for series info: %v", derr)
+					return
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode > 399 {
+					log.Printf("[xtream-proxy] Raw series info request returned status %d", resp.StatusCode)
+					return
+				}
+
+				body, rerr := ioutil.ReadAll(resp.Body)
+				if rerr != nil {
+					log.Printf("[xtream-proxy] Error reading raw series info response: %v", rerr)
+					return
+				}
+
+				var generic interface{}
+				if jerr := json.Unmarshal(body, &generic); jerr != nil {
+					log.Printf("[xtream-proxy] Error unmarshalling raw series info JSON: %v", jerr)
+					return
+				}
+
+				log.Printf("[xtream-proxy] Returning tolerant raw series info for series_id %s", seriesID)
+				respBody = generic
+				// clear the original error since we succeeded with the fallback
+				err = nil
+			}
 	case getShortEPG:
 		limit := 0
 

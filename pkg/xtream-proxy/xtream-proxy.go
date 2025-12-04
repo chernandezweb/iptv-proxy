@@ -127,9 +127,52 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if err != nil {
 			return
 		}
-		respBody, err = c.GetVideoOnDemandInfo(q["vod_id"][0])
+		vodID := q["vod_id"][0]
+		respBody, err = c.GetVideoOnDemandInfo(vodID)
 		if err != nil {
-			log.Printf("[xtream-proxy] Error getting VOD info for vod_id %s: %v", q["vod_id"][0], err)
+			log.Printf("[xtream-proxy] Error getting VOD info for vod_id %s: %v", vodID, err)
+
+			// Tolerant fallback: perform a raw HTTP GET to the player_api.php and return
+			// the parsed JSON when typed unmarshal in the library fails (often due
+			// to mixed number/string types for numeric fields).
+			rawURL := fmt.Sprintf("%s/player_api.php?username=%s&password=%s&action=get_vod_info&vod_id=%s", c.BaseURL, c.Username, c.Password, url.QueryEscape(vodID))
+			req, rerr := http.NewRequest("GET", rawURL, nil)
+			if rerr != nil {
+				log.Printf("[xtream-proxy] Error creating raw request for VOD info: %v", rerr)
+				// return original error
+				return
+			}
+			req.Header.Set("User-Agent", c.UserAgent)
+			req = req.WithContext(c.Context)
+
+			resp, derr := c.HTTP.Do(req)
+			if derr != nil {
+				log.Printf("[xtream-proxy] Error performing raw request for VOD info: %v", derr)
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode > 399 {
+				log.Printf("[xtream-proxy] Raw VOD info request returned status %d", resp.StatusCode)
+				return
+			}
+
+			body, rerr := ioutil.ReadAll(resp.Body)
+			if rerr != nil {
+				log.Printf("[xtream-proxy] Error reading raw VOD info response: %v", rerr)
+				return
+			}
+
+			var generic interface{}
+			if jerr := json.Unmarshal(body, &generic); jerr != nil {
+				log.Printf("[xtream-proxy] Error unmarshalling raw VOD info JSON: %v", jerr)
+				return
+			}
+
+			log.Printf("[xtream-proxy] Returning tolerant raw VOD info for vod_id %s", vodID)
+			respBody = generic
+			// clear the original error since we succeeded with the fallback
+			err = nil
 		}
 	case getSeriesCategories:
 		log.Printf("[xtream-proxy] Getting series categories...")

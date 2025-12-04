@@ -127,6 +127,9 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 			return
 		}
 		respBody, err = c.GetVideoOnDemandInfo(q["vod_id"][0])
+		if err != nil {
+			log.Printf("[xtream-proxy] Error getting VOD info for vod_id %s: %v", q["vod_id"][0], err)
+		}
 	case getSeriesCategories:
 		log.Printf("[xtream-proxy] Getting series categories...")
 		respBody, err = c.GetSeriesCategories()
@@ -191,6 +194,9 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 			return
 		}
 		respBody, err = c.GetSeriesInfo(q["series_id"][0])
+		if err != nil {
+			log.Printf("[xtream-proxy] Error getting series info for series_id %s: %v", q["series_id"][0], err)
+		}
 	case getShortEPG:
 		limit := 0
 

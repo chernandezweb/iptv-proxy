@@ -20,11 +20,14 @@ package xtreamproxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 
 	"github.com/pierre-emmanuelJ/iptv-proxy/pkg/config"
 	xtream "github.com/tellytv/go.xtream-codes"
@@ -153,25 +156,41 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 			}
 
 			var allSeries []xtream.SeriesInfo
+			var mu sync.Mutex
 			successCount := 0
 			errorCount := 0
 
+			// Bounded concurrency to fetch categories in parallel and speed up total time
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 10) // concurrency limit
+
 			for _, category := range categories {
-				categorySeries, err := c.GetSeries(fmt.Sprint(category.ID))
-				if err != nil {
-					errorCount++
-					log.Printf("[xtream-proxy] Error getting series for category %d (%s): %v", category.ID, category.Name, err)
-					// Continue with next category instead of failing completely
-					continue
-				}
-				if len(categorySeries) > 0 {
-					allSeries = append(allSeries, categorySeries...)
-					successCount++
-					log.Printf("[xtream-proxy] Added %d series from category: %s", len(categorySeries), category.Name)
-				} else {
-					log.Printf("[xtream-proxy] No series found in category: %s", category.Name)
-				}
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(cat xtream.Category) {
+					defer wg.Done()
+					defer func() { <-sem }()
+
+					categorySeries, err := c.GetSeries(fmt.Sprint(cat.ID))
+					mu.Lock()
+					defer mu.Unlock()
+					if err != nil {
+						errorCount++
+						log.Printf("[xtream-proxy] Error getting series for category %d (%s): %v", cat.ID, cat.Name, err)
+						return
+					}
+					if len(categorySeries) > 0 {
+						allSeries = append(allSeries, categorySeries...)
+						successCount++
+						log.Printf("[xtream-proxy] Added %d series from category: %s", len(categorySeries), cat.Name)
+					} else {
+						log.Printf("[xtream-proxy] No series found in category: %s", cat.Name)
+					}
+				}(category)
 			}
+			wg.Wait()
+			close(sem)
+
 			log.Printf("[xtream-proxy] Series loading complete: %d categories successful, %d failed, %d total series", successCount, errorCount, len(allSeries))
 			respBody = allSeries
 		} else {

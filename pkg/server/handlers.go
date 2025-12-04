@@ -71,6 +71,13 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 		return
 	}
 
+	// Ensure upstream receives a sensible User-Agent and other headers from the client
+	if ctx.Request.UserAgent() != "" && req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", ctx.Request.UserAgent())
+	}
+	// Do not forward Authorization/Proxy-Authorization headers from the client to upstream
+	req.Header.Del("Authorization")
+	req.Header.Del("Proxy-Authorization")
 	mergeHttpHeader(req.Header, ctx.Request.Header)
 
 	resp, err := client.Do(req)
@@ -79,6 +86,33 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 		return
 	}
 	defer resp.Body.Close()
+
+	// If upstream returned an error status, log headers and a small portion
+	// of the response body to aid debugging (don't consume large bodies).
+	if resp.StatusCode >= 400 {
+		// copy headers
+		hdrs := make(map[string][]string)
+		for k, v := range resp.Header {
+			hdrs[k] = v
+		}
+		log.Printf("[iptv-proxy] Upstream %s returned status %d; headers=%v", oriURL.String(), resp.StatusCode, hdrs)
+
+		// read up to 8KB of the body for logging
+		lr := io.LimitReader(resp.Body, 8*1024)
+		b, _ := ioutil.ReadAll(lr)
+		if len(b) > 0 {
+			log.Printf("[iptv-proxy] Upstream error body (truncated): %s", string(b))
+		}
+		// Reset body reader so we can still stream the full response to the client.
+		// Note: we can't rewind the original resp.Body. Instead, for error statuses
+		// we'll return the truncated body we read above and set the status.
+		mergeHttpHeader(ctx.Writer.Header(), resp.Header)
+		ctx.Status(resp.StatusCode)
+		if len(b) > 0 {
+			ctx.Writer.Write(b) // nolint: errcheck
+		}
+		return
+	}
 
 	mergeHttpHeader(ctx.Writer.Header(), resp.Header)
 	ctx.Status(resp.StatusCode)

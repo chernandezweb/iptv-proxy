@@ -325,7 +325,7 @@ func (c *Config) xtreamGet(ctx *gin.Context) {
 			}
 		}
 		// Since we don't know if a raw M3U track is Live/VOD/Series easily, we'll use AllowedLiveCategories as the global filter for raw M3U
-		if isAllowedCategory(groupTitle, c.AllowedLiveCategories) {
+		if c.ProxyConfig.Filters.IsAllowed("live", groupTitle) {
 			filteredTracks = append(filteredTracks, track)
 		}
 	}

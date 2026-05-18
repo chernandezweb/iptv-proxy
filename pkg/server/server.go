@@ -66,7 +66,7 @@ type Config struct {
 }
 
 // NewServer initialize a new server configuration
-func NewServer(config *config.ProxyConfig) (*Config, error) {
+func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	var p m3u.Playlist
 	if config.RemoteURL.String() != "" {
 		var err error
@@ -90,7 +90,7 @@ func NewServer(config *config.ProxyConfig) (*Config, error) {
 	}
 
 	cfg := &Config{
-		ProxyConfig:          config,
+		ProxyConfig:          cfgData,
 		playlist:             &p,
 		track:                nil,
 		proxyfiedM3UPath:     defaultProxyfiedM3UPath,

@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"io/ioutil"
 
@@ -97,6 +98,19 @@ func (c *Client) login(proxyUser, proxyPassword, proxyURL string, proxyPort int,
 	return req, nil
 }
 
+func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
+	if len(allowedPrefixes) == 0 {
+		return true // Allow all if not configured
+	}
+	nameUpper := strings.ToUpper(categoryName)
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Action execute an xtream action.
 func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values) (respBody interface{}, httpcode int, err error) {
 	log.Printf("[xtream-proxy] Action called: '%s' with params: %v", action, q)
@@ -107,7 +121,17 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 
 	switch action {
 	case getLiveCategories:
-		respBody, err = c.GetLiveCategories()
+		cats, err2 := c.GetLiveCategories()
+		if err2 == nil {
+			var filtered []xtream.Category
+			for _, cat := range cats {
+				if isAllowedCategory(cat.Name, config.AllowedLiveCategories) {
+					filtered = append(filtered, cat)
+				}
+			}
+			respBody = filtered
+		}
+		err = err2
 	case getLiveStreams:
 		categoryID := ""
 		if len(q["category_id"]) > 0 {
@@ -115,7 +139,17 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		}
 		respBody, err = c.GetLiveStreams(categoryID)
 	case getVodCategories:
-		respBody, err = c.GetVideoOnDemandCategories()
+		cats, err2 := c.GetVideoOnDemandCategories()
+		if err2 == nil {
+			var filtered []xtream.Category
+			for _, cat := range cats {
+				if isAllowedCategory(cat.Name, config.AllowedVODCategories) {
+					filtered = append(filtered, cat)
+				}
+			}
+			respBody = filtered
+		}
+		err = err2
 	case getVodStreams:
 		categoryID := ""
 		if len(q["category_id"]) > 0 {
@@ -176,8 +210,16 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		}
 	case getSeriesCategories:
 		log.Printf("[xtream-proxy] Getting series categories...")
-		respBody, err = c.GetSeriesCategories()
+		cats, err2 := c.GetSeriesCategories()
+		err = err2
 		if err == nil {
+			var filtered []xtream.Category
+			for _, cat := range cats {
+				if isAllowedCategory(cat.Name, config.AllowedSeriesCategories) {
+					filtered = append(filtered, cat)
+				}
+			}
+			respBody = filtered
 			if categories, ok := respBody.([]xtream.Category); ok {
 				log.Printf("[xtream-proxy] Found %d series categories", len(categories))
 			}

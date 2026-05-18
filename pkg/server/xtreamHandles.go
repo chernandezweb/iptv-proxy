@@ -429,7 +429,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		}
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent)
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent())
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -469,6 +469,7 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 			if !c.refreshing[cacheKey] {
 				c.refreshing[cacheKey] = true
 				c.refreshingMutex.Unlock()
+				userAgent := ctx.Request.UserAgent()
 
 				go func() {
 					defer func() {
@@ -498,7 +499,7 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 		return
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent)
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent())
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return

@@ -14,7 +14,7 @@ var webFS embed.FS
 
 func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin := r.Group("/admin")
-	admin.Use(c.authenticate)
+	admin.Use(gin.BasicAuth(gin.Accounts{c.User.String(): c.Password.String()}))
 
 	// API endpoints
 	admin.GET("/api/categories", c.adminGetCategories)

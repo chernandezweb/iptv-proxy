@@ -269,11 +269,11 @@
         
         let html = '';
         items.forEach((item, index) => {
-            const checked = isSelected(type, item.name) ? 'checked' : '';
+            const checked = isSelected(type, item.category_name) ? 'checked' : '';
             html += `
-                <div class="category-item" data-name="${item.name.toLowerCase()}">
-                    <input type="checkbox" id="${type}-${index}" value="${item.name}" ${checked} class="${type}-cb">
-                    <label for="${type}-${index}">${item.name}</label>
+                <div class="category-item" data-name="${item.category_name.toLowerCase()}">
+                    <input type="checkbox" id="${type}-${index}" value="${item.category_name}" ${checked} class="${type}-cb">
+                    <label for="${type}-${index}">${item.category_name}</label>
                 </div>
             `;
         });

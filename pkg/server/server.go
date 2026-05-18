@@ -68,22 +68,22 @@ type Config struct {
 // NewServer initialize a new server configuration
 func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	var p m3u.Playlist
-	if config.RemoteURL.String() != "" {
+	if cfgData.RemoteURL.String() != "" {
 		var err error
-		p, err = m3u.Parse(config.RemoteURL.String())
+		p, err = m3u.Parse(cfgData.RemoteURL.String())
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if trimmedCustomId := strings.Trim(config.CustomId, "/"); trimmedCustomId != "" {
+	if trimmedCustomId := strings.Trim(cfgData.CustomId, "/"); trimmedCustomId != "" {
 		endpointAntiColision = trimmedCustomId
 	}
 
 	var baseURL *url.URL
-	if config.XtreamBaseURL != "" {
+	if cfgData.XtreamBaseURL != "" {
 		var err error
-		baseURL, err = url.Parse(config.XtreamBaseURL)
+		baseURL, err = url.Parse(cfgData.XtreamBaseURL)
 		if err != nil {
 			return nil, err
 		}
@@ -98,8 +98,8 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 		baseStreamURL:        baseURL,
 		refreshing:           make(map[string]bool),
 	}
-	cfg.metadataCache = newResponseCache(config.MetadataCacheTTL)
-	cfg.xmltvCache = newResponseCache(config.XMLTVCacheTTL)
+	cfg.metadataCache = newResponseCache(cfgData.MetadataCacheTTL)
+	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
 	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
 

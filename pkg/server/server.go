@@ -59,6 +59,9 @@ type Config struct {
 	xmltvCache    *responseCache
 	httpClient    *http.Client
 	baseStreamURL *url.URL
+
+	refreshing      map[string]bool
+	refreshingMutex sync.Mutex
 }
 
 // NewServer initialize a new server configuration
@@ -92,6 +95,7 @@ func NewServer(config *config.ProxyConfig) (*Config, error) {
 		proxyfiedM3UPath:     defaultProxyfiedM3UPath,
 		endpointAntiColision: endpointAntiColision,
 		baseStreamURL:        baseURL,
+		refreshing:           make(map[string]bool),
 	}
 	cfg.metadataCache = newResponseCache(config.MetadataCacheTTL)
 	cfg.xmltvCache = newResponseCache(config.XMLTVCacheTTL)

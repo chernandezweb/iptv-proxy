@@ -28,26 +28,21 @@ func newResponseCache(ttl time.Duration) *responseCache {
 	}
 }
 
-func (c *responseCache) Get(key string) (cachedResponse, bool) {
+func (c *responseCache) Get(key string) (cachedResponse, bool, bool) {
 	if c == nil || c.ttl <= 0 {
-		return cachedResponse{}, false
+		return cachedResponse{}, false, false
 	}
 
 	c.mu.RLock()
 	entry, ok := c.entries[key]
 	c.mu.RUnlock()
 	if !ok {
-		return cachedResponse{}, false
+		return cachedResponse{}, false, false
 	}
 
-	if time.Since(entry.storedAt) > c.ttl {
-		c.mu.Lock()
-		delete(c.entries, key)
-		c.mu.Unlock()
-		return cachedResponse{}, false
-	}
+	isExpired := time.Since(entry.storedAt) > c.ttl
 
-	return entry, true
+	return entry, true, isExpired
 }
 
 func (c *responseCache) Set(key string, payload []byte, contentType string) {

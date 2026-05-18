@@ -148,9 +148,6 @@ func init() {
 	rootCmd.Flags().StringSlice("allowed-live-categories", []string{}, "Comma-separated list of allowed live category prefixes (e.g. 'US|,CA|'). Empty means allow all.")
 	rootCmd.Flags().StringSlice("allowed-vod-categories", []string{}, "Comma-separated list of allowed VOD category prefixes. Empty means allow all.")
 	rootCmd.Flags().StringSlice("allowed-series-categories", []string{}, "Comma-separated list of allowed series category prefixes. Empty means allow all.")
-	rootCmd.Flags().StringSlice("allowed-live-categories", []string{}, "Comma-separated list of allowed live category prefixes (e.g. 'US|,CA|'). Empty means allow all.")
-	rootCmd.Flags().StringSlice("allowed-vod-categories", []string{}, "Comma-separated list of allowed VOD category prefixes. Empty means allow all.")
-	rootCmd.Flags().StringSlice("allowed-series-categories", []string{}, "Comma-separated list of allowed series category prefixes. Empty means allow all.")
 
 	if e := viper.BindPFlags(rootCmd.Flags()); e != nil {
 		log.Fatal("error binding PFlags to viper")

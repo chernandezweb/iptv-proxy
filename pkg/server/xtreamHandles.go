@@ -74,6 +74,32 @@ func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error 
 	return nil
 }
 
+func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
+	if len(allowedPrefixes) == 0 {
+		return true // Allow all if not configured
+	}
+	nameUpper := strings.ToUpper(categoryName)
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
+	if len(allowedPrefixes) == 0 {
+		return true // Allow all if not configured
+	}
+	nameUpper := strings.ToUpper(categoryName)
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Playlist, error) {
 	log.Printf("[iptv-proxy] xtreamGenerateM3u called with extension: %s", extension)
 
@@ -102,6 +128,9 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	}
 
 	for _, category := range liveCat {
+		if !isAllowedCategory(category.Name, c.AllowedLiveCategories) {
+			continue
+		}
 		live, err := client.GetLiveStreams(fmt.Sprint(category.ID))
 		if err != nil {
 			return nil, err
@@ -146,6 +175,9 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	log.Printf("[iptv-proxy] Found %d VOD categories", len(vodCat))
 
 	for _, category := range vodCat {
+		if !isAllowedCategory(category.Name, c.AllowedVODCategories) {
+			continue
+		}
 		vods, err := client.GetVideoOnDemandStreams(fmt.Sprint(category.ID))
 		if err != nil {
 			return nil, err
@@ -184,6 +216,9 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	log.Printf("[iptv-proxy] Found %d series categories", len(seriesCat))
 
 	for _, category := range seriesCat {
+		if !isAllowedCategory(category.Name, c.AllowedSeriesCategories) {
+			continue
+		}
 		series, err := client.GetSeries(fmt.Sprint(category.ID))
 		if err != nil {
 			return nil, err
@@ -302,6 +337,24 @@ func (c *Config) xtreamGet(ctx *gin.Context) {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
 	}
+	
+	// Apply filters to raw M3U
+	var filteredTracks []m3u.Track
+	for _, track := range playlist.Tracks {
+		groupTitle := ""
+		for _, tag := range track.Tags {
+			if tag.Name == "group-title" {
+				groupTitle = tag.Value
+				break
+			}
+		}
+		// Since we don't know if a raw M3U track is Live/VOD/Series easily, we'll use AllowedLiveCategories as the global filter for raw M3U
+		if isAllowedCategory(groupTitle, c.AllowedLiveCategories) {
+			filteredTracks = append(filteredTracks, track)
+		}
+	}
+	playlist.Tracks = filteredTracks
+
 	if err := c.cacheXtreamM3u(&playlist, m3uURL.String()); err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return

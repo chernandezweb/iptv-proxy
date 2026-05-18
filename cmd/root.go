@@ -92,6 +92,9 @@ var rootCmd = &cobra.Command{
 			XtreamGenerateApiGet: viper.GetBool("xtream-api-get"),
 			MetadataCacheTTL:     viper.GetDuration("metadata-cache-ttl"),
 			XMLTVCacheTTL:        viper.GetDuration("xmltv-cache-ttl"),
+			AllowedLiveCategories: viper.GetStringSlice("allowed-live-categories"),
+			AllowedVODCategories:  viper.GetStringSlice("allowed-vod-categories"),
+			AllowedSeriesCategories: viper.GetStringSlice("allowed-series-categories"),
 		}
 
 		if conf.AdvertisedPort == 0 {
@@ -142,6 +145,12 @@ func init() {
 	rootCmd.Flags().BoolP("xtream-api-get", "", false, "Generate get.php from xtream API instead of get.php original endpoint")
 	rootCmd.Flags().Duration("metadata-cache-ttl", 5*time.Minute, "Cache duration for heavy Xtream metadata actions (set to 0 to disable)")
 	rootCmd.Flags().Duration("xmltv-cache-ttl", 30*time.Minute, "Cache duration for xmltv.php responses (set to 0 to disable)")
+	rootCmd.Flags().StringSlice("allowed-live-categories", []string{}, "Comma-separated list of allowed live category prefixes (e.g. 'US|,CA|'). Empty means allow all.")
+	rootCmd.Flags().StringSlice("allowed-vod-categories", []string{}, "Comma-separated list of allowed VOD category prefixes. Empty means allow all.")
+	rootCmd.Flags().StringSlice("allowed-series-categories", []string{}, "Comma-separated list of allowed series category prefixes. Empty means allow all.")
+	rootCmd.Flags().StringSlice("allowed-live-categories", []string{}, "Comma-separated list of allowed live category prefixes (e.g. 'US|,CA|'). Empty means allow all.")
+	rootCmd.Flags().StringSlice("allowed-vod-categories", []string{}, "Comma-separated list of allowed VOD category prefixes. Empty means allow all.")
+	rootCmd.Flags().StringSlice("allowed-series-categories", []string{}, "Comma-separated list of allowed series category prefixes. Empty means allow all.")
 
 	if e := viper.BindPFlags(rootCmd.Flags()); e != nil {
 		log.Fatal("error binding PFlags to viper")

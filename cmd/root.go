@@ -92,9 +92,9 @@ var rootCmd = &cobra.Command{
 			XtreamGenerateApiGet: viper.GetBool("xtream-api-get"),
 			MetadataCacheTTL:     viper.GetDuration("metadata-cache-ttl"),
 			XMLTVCacheTTL:        viper.GetDuration("xmltv-cache-ttl"),
-			AllowedLiveCategories: viper.GetStringSlice("allowed-live-categories"),
-			AllowedVODCategories:  viper.GetStringSlice("allowed-vod-categories"),
-			AllowedSeriesCategories: viper.GetStringSlice("allowed-series-categories"),
+			AllowedLiveCategories: parseEnvSlice("ALLOWED_LIVE_CATEGORIES"),
+			AllowedVODCategories:  parseEnvSlice("ALLOWED_VOD_CATEGORIES"),
+			AllowedSeriesCategories: parseEnvSlice("ALLOWED_SERIES_CATEGORIES"),
 		}
 
 		if conf.AdvertisedPort == 0 {
@@ -155,6 +155,22 @@ func init() {
 }
 
 // initConfig reads in config file and ENV variables if set.
+func parseEnvSlice(envKey string) []string {
+	val := os.Getenv(envKey)
+	if val == "" {
+		return nil
+	}
+	parts := strings.Split(val, ",")
+	var res []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			res = append(res, p)
+		}
+	}
+	return res
+}
+
 func initConfig() {
 	if cfgFile != "" {
 		// Use config file from the flag.

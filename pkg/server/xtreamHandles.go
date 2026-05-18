@@ -87,19 +87,6 @@ func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
 	return false
 }
 
-func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
-	if len(allowedPrefixes) == 0 {
-		return true // Allow all if not configured
-	}
-	nameUpper := strings.ToUpper(categoryName)
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Playlist, error) {
 	log.Printf("[iptv-proxy] xtreamGenerateM3u called with extension: %s", extension)
 

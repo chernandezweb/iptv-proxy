@@ -98,18 +98,7 @@ func (c *Client) login(proxyUser, proxyPassword, proxyURL string, proxyPort int,
 	return req, nil
 }
 
-func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
-	if len(allowedPrefixes) == 0 {
-		return true // Allow all if not configured
-	}
-	nameUpper := strings.ToUpper(categoryName)
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
-			return true
-		}
-	}
-	return false
-}
+
 
 // Action execute an xtream action.
 func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values) (respBody interface{}, httpcode int, err error) {
@@ -125,7 +114,7 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if err2 == nil {
 			var filtered []xtream.Category
 			for _, cat := range cats {
-				if isAllowedCategory(cat.Name, config.AllowedLiveCategories) {
+				if config.Filters.IsAllowed("live", cat.Name) {
 					filtered = append(filtered, cat)
 				}
 			}
@@ -143,7 +132,7 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if err2 == nil {
 			var filtered []xtream.Category
 			for _, cat := range cats {
-				if isAllowedCategory(cat.Name, config.AllowedVODCategories) {
+				if config.Filters.IsAllowed("vod", cat.Name) {
 					filtered = append(filtered, cat)
 				}
 			}
@@ -215,7 +204,7 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if err == nil {
 			var filtered []xtream.Category
 			for _, cat := range cats {
-				if isAllowedCategory(cat.Name, config.AllowedSeriesCategories) {
+				if config.Filters.IsAllowed("series", cat.Name) {
 					filtered = append(filtered, cat)
 				}
 			}

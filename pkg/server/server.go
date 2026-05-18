@@ -101,6 +101,7 @@ func NewServer(config *config.ProxyConfig) (*Config, error) {
 	cfg.metadataCache = newResponseCache(config.MetadataCacheTTL)
 	cfg.xmltvCache = newResponseCache(config.XMLTVCacheTTL)
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
+	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
 
 	return cfg, nil
 }
@@ -115,6 +116,7 @@ func (c *Config) Serve() error {
 	router.Use(cors.Default())
 	group := router.Group("/")
 	c.routes(group)
+	c.adminRoutes(group)
 
 	// Add a message to indicate the server is ready
 	log.Printf("[iptv-proxy] Server is ready and listening on :%d", c.HostConfig.Port)

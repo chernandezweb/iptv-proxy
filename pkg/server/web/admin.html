@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Proxy Admin</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338ca;
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.5rem 1.5rem;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            background-color: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            background-color: var(--bg-card);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            align-items: center;
+        }
+
+        .search {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--border);
+            background-color: var(--bg);
+            color: var(--text);
+            width: 300px;
+        }
+
+        .list-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            background-color: var(--bg);
+        }
+
+        .category-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.1s;
+        }
+
+        .category-item:last-child {
+            border-bottom: none;
+        }
+
+        .category-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .category-item input[type="checkbox"] {
+            margin-right: 1rem;
+            width: 1.25rem;
+            height: 1.25rem;
+            accent-color: var(--primary);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background-color: var(--success);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(1rem);
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>IPTV Proxy Filters</h1>
+        <button class="btn" id="saveBtn" onclick="saveFilters()">Save Filters</button>
+    </header>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('live')">Live TV</button>
+        <button class="tab" onclick="switchTab('vod')">Movies (VOD)</button>
+        <button class="tab" onclick="switchTab('series')">Series</button>
+    </div>
+
+    <div id="loading" class="loading">Loading categories from provider...</div>
+
+    <div id="liveTab" class="tab-content active">
+        <div class="controls">
+            <input type="text" class="search" placeholder="Search live categories..." oninput="filterList('live', this.value)">
+            <div>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('live', true)">Select All</button>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('live', false)">Clear All</button>
+            </div>
+        </div>
+        <div class="list-container" id="liveList"></div>
+    </div>
+
+    <div id="vodTab" class="tab-content">
+        <div class="controls">
+            <input type="text" class="search" placeholder="Search VOD categories..." oninput="filterList('vod', this.value)">
+            <div>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('vod', true)">Select All</button>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('vod', false)">Clear All</button>
+            </div>
+        </div>
+        <div class="list-container" id="vodList"></div>
+    </div>
+
+    <div id="seriesTab" class="tab-content">
+        <div class="controls">
+            <input type="text" class="search" placeholder="Search series categories..." oninput="filterList('series', this.value)">
+            <div>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('series', true)">Select All</button>
+                <button class="btn" style="background-color: var(--border)" onclick="selectAll('series', false)">Clear All</button>
+            </div>
+        </div>
+        <div class="list-container" id="seriesList"></div>
+    </div>
+</div>
+
+<div class="toast" id="toast">Filters saved successfully!</div>
+
+<script>
+    let state = {
+        live: [], vod: [], series: [],
+        filters: { allowed_live_categories: [], allowed_vod_categories: [], allowed_series_categories: [] }
+    };
+
+    async function loadData() {
+        try {
+            const res = await fetch('/admin/api/categories');
+            if (!res.ok) throw new Error('Failed to load data');
+            const data = await res.json();
+            
+            state.live = data.live || [];
+            state.vod = data.vod || [];
+            state.series = data.series || [];
+            state.filters = data.filters || state.filters;
+            
+            // If no filters are defined, we assume all are allowed
+            renderList('live');
+            renderList('vod');
+            renderList('series');
+            
+            document.getElementById('loading').style.display = 'none';
+        } catch (e) {
+            document.getElementById('loading').innerText = 'Error loading categories: ' + e.message;
+        }
+    }
+
+    function isSelected(type, name) {
+        const key = `allowed_${type}_categories`;
+        const filters = state.filters[key] || [];
+        if (filters.length === 0) return true; // Empty means all allowed
+        return filters.some(f => name.toUpperCase().startsWith(f.toUpperCase()));
+    }
+
+    function renderList(type) {
+        const list = document.getElementById(`${type}List`);
+        const items = state[type];
+        
+        let html = '';
+        items.forEach((item, index) => {
+            const checked = isSelected(type, item.name) ? 'checked' : '';
+            html += `
+                <div class="category-item" data-name="${item.name.toLowerCase()}">
+                    <input type="checkbox" id="${type}-${index}" value="${item.name}" ${checked} class="${type}-cb">
+                    <label for="${type}-${index}">${item.name}</label>
+                </div>
+            `;
+        });
+        list.innerHTML = html;
+    }
+
+    function filterList(type, query) {
+        query = query.toLowerCase();
+        const items = document.querySelectorAll(`#${type}List .category-item`);
+        items.forEach(item => {
+            if (item.dataset.name.includes(query)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    function selectAll(type, check) {
+        const checkboxes = document.querySelectorAll(`.${type}-cb`);
+        checkboxes.forEach(cb => {
+            if (cb.parentElement.style.display !== 'none') {
+                cb.checked = check;
+            }
+        });
+    }
+
+    function switchTab(type) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        
+        event.target.classList.add('active');
+        document.getElementById(`${type}Tab`).classList.add('active');
+    }
+
+    async function saveFilters() {
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.innerText = 'Saving...';
+
+        const getSelected = (type) => {
+            const checkboxes = document.querySelectorAll(`.${type}-cb`);
+            const total = checkboxes.length;
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+            // If all are checked, send empty array to allow all
+            if (checked.length === total) return [];
+            return checked;
+        };
+
+        const payload = {
+            allowed_live_categories: getSelected('live'),
+            allowed_vod_categories: getSelected('vod'),
+            allowed_series_categories: getSelected('series')
+        };
+
+        try {
+            const res = await fetch('/admin/api/filters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('Failed to save');
+            
+            showToast();
+        } catch (e) {
+            alert('Error saving filters: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Save Filters';
+        }
+    }
+
+    function showToast() {
+        const toast = document.getElementById('toast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Init
+    loadData();
+</script>
+
+</body>
+</html>

@@ -74,18 +74,7 @@ func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error 
 	return nil
 }
 
-func isAllowedCategory(categoryName string, allowedPrefixes []string) bool {
-	if len(allowedPrefixes) == 0 {
-		return true // Allow all if not configured
-	}
-	nameUpper := strings.ToUpper(categoryName)
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(nameUpper, strings.ToUpper(prefix)) {
-			return true
-		}
-	}
-	return false
-}
+
 
 func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Playlist, error) {
 	log.Printf("[iptv-proxy] xtreamGenerateM3u called with extension: %s", extension)
@@ -115,7 +104,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	}
 
 	for _, category := range liveCat {
-		if !isAllowedCategory(category.Name, c.AllowedLiveCategories) {
+		if !c.ProxyConfig.Filters.IsAllowed("live", category.Name) {
 			continue
 		}
 		live, err := client.GetLiveStreams(fmt.Sprint(category.ID))
@@ -162,7 +151,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	log.Printf("[iptv-proxy] Found %d VOD categories", len(vodCat))
 
 	for _, category := range vodCat {
-		if !isAllowedCategory(category.Name, c.AllowedVODCategories) {
+		if !c.ProxyConfig.Filters.IsAllowed("vod", category.Name) {
 			continue
 		}
 		vods, err := client.GetVideoOnDemandStreams(fmt.Sprint(category.ID))
@@ -203,7 +192,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 	log.Printf("[iptv-proxy] Found %d series categories", len(seriesCat))
 
 	for _, category := range seriesCat {
-		if !isAllowedCategory(category.Name, c.AllowedSeriesCategories) {
+		if !c.ProxyConfig.Filters.IsAllowed("series", category.Name) {
 			continue
 		}
 		series, err := client.GetSeries(fmt.Sprint(category.ID))

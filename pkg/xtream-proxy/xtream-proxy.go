@@ -52,8 +52,12 @@ type Client struct {
 }
 
 // New new xtream client
-func New(user, password, baseURL, userAgent string) (*Client, error) {
-	cli, err := xtream.NewClientWithUserAgent(context.Background(), user, password, baseURL, userAgent)
+func New(user, password, baseURL, userAgent string, referer ...string) (*Client, error) {
+	ref := ""
+	if len(referer) > 0 {
+		ref = referer[0]
+	}
+	cli, err := xtream.NewClientWithConfig(context.Background(), user, password, baseURL, userAgent, ref)
 	if err != nil {
 		return nil, err
 	}

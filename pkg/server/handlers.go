@@ -147,6 +147,9 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	if ua := ctx.Request.UserAgent(); ua != "" {
 		req.Header.Set("User-Agent", ua)
 	}
+	if c.Referer != "" {
+		req.Header.Set("Referer", c.Referer)
+	}
 
 	// Do not leak client auth headers to the upstream provider.
 	req.Header.Del("Authorization")

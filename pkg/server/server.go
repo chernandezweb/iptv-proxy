@@ -102,6 +102,23 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
 	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
+	cfg.ProxyConfig.Provider = config.NewProvider("provider.json", config.ProviderData{
+		XtreamBaseURL:  cfgData.XtreamBaseURL,
+		XtreamUser:     string(cfgData.XtreamUser),
+		XtreamPassword: string(cfgData.XtreamPassword),
+		Referer:        cfgData.Referer,
+	})
+
+	provData := cfg.ProxyConfig.Provider.GetData()
+	cfg.ProxyConfig.XtreamBaseURL = provData.XtreamBaseURL
+	cfg.ProxyConfig.XtreamUser = config.CredentialString(provData.XtreamUser)
+	cfg.ProxyConfig.XtreamPassword = config.CredentialString(provData.XtreamPassword)
+	cfg.ProxyConfig.Referer = provData.Referer
+	if provData.XtreamBaseURL != "" {
+		if u, err := url.Parse(provData.XtreamBaseURL); err == nil {
+			cfg.baseStreamURL = u
+		}
+	}
 
 	return cfg, nil
 }

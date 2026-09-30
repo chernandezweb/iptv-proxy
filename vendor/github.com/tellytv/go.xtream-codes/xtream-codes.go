@@ -20,6 +20,7 @@ type XtreamClient struct {
 	Password  string
 	BaseURL   string
 	UserAgent string
+	Referer   string
 
 	ServerInfo ServerInfo
 	UserInfo   UserInfo
@@ -82,14 +83,48 @@ func NewClientWithContext(ctx context.Context, username, password, baseURL strin
 
 // NewClientWithUserAgent returns an initialized XtreamClient with the given values.
 func NewClientWithUserAgent(ctx context.Context, username, password, baseURL, userAgent string) (*XtreamClient, error) {
-	c, err := NewClient(username, password, baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c.UserAgent = userAgent
-	c.Context = ctx
+	return NewClientWithConfig(ctx, username, password, baseURL, userAgent, "")
+}
 
-	return c, nil
+// NewClientWithConfig returns an initialized XtreamClient with custom user agent and referer.
+func NewClientWithConfig(ctx context.Context, username, password, baseURL, userAgent, referer string) (*XtreamClient, error) {
+	_, parseURLErr := url.Parse(baseURL)
+	if parseURLErr != nil {
+		return nil, fmt.Errorf("error parsing url: %s", parseURLErr.Error())
+	}
+
+	if userAgent == "" {
+		userAgent = defaultUserAgent
+	}
+
+	client := &XtreamClient{
+		Username:  username,
+		Password:  password,
+		BaseURL:   baseURL,
+		UserAgent: userAgent,
+		Referer:   referer,
+
+		HTTP:    http.DefaultClient,
+		Context: ctx,
+
+		streams: make(map[int]Stream),
+	}
+
+	authData, authErr := client.sendRequest("", nil)
+	if authErr != nil {
+		return nil, fmt.Errorf("error sending authentication request: %s", authErr.Error())
+	}
+
+	a := &AuthenticationResponse{}
+
+	if jsonErr := json.Unmarshal(authData, &a); jsonErr != nil {
+		return nil, fmt.Errorf("error unmarshaling json: %s", jsonErr.Error())
+	}
+
+	client.ServerInfo = a.ServerInfo
+	client.UserInfo = a.UserInfo
+
+	return client, nil
 }
 
 // GetStreamURL will return a stream URL string for the given streamID and wantedFormat.
@@ -322,6 +357,9 @@ func (c *XtreamClient) sendRequest(action string, parameters url.Values) ([]byte
 	}
 
 	request.Header.Set("User-Agent", c.UserAgent)
+	if c.Referer != "" {
+		request.Header.Set("Referer", c.Referer)
+	}
 
 	request = request.WithContext(c.Context)
 

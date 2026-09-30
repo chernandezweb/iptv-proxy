@@ -52,7 +52,9 @@ type ProxyConfig struct {
 	M3UCacheExpiration   int
 	MetadataCacheTTL     time.Duration
 	XMLTVCacheTTL        time.Duration
-	Filters *Filters
+	Filters              *Filters
+	Provider             *Provider
+	Referer              string
 	M3UFileName          string
 	CustomEndpoint       string
 	CustomId             string

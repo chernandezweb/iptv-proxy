@@ -64,3 +64,13 @@ func (c *responseCache) Set(key string, payload []byte, contentType string) {
 	}
 	c.mu.Unlock()
 }
+
+func (c *responseCache) Clear() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.entries = make(map[string]cachedResponse)
+	c.mu.Unlock()
+}
+

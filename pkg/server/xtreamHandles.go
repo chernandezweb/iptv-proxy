@@ -79,7 +79,7 @@ func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error 
 func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Playlist, error) {
 	log.Printf("[iptv-proxy] xtreamGenerateM3u called with extension: %s", extension)
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent)
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent, c.Referer)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		}
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent())
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent(), c.Referer)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -508,7 +508,7 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 					}()
 
 					log.Printf("[iptv-proxy] Background XMLTV refresh starting...")
-					client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent)
+					client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, userAgent, c.Referer)
 					if err == nil {
 						resp, err := client.GetXMLTV()
 						if err == nil {
@@ -528,7 +528,7 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 		return
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent())
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent(), c.Referer)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -752,6 +752,9 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	}
 
 	mergeHttpHeader(req.Header, ctx.Request.Header)
+	if c.Referer != "" {
+		req.Header.Set("Referer", c.Referer)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -779,6 +782,9 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 			}
 
 			mergeHttpHeader(hlsReq.Header, ctx.Request.Header)
+			if c.Referer != "" {
+				hlsReq.Header.Set("Referer", c.Referer)
+			}
 
 			hlsResp, err := client.Do(hlsReq)
 			if err != nil {

@@ -241,7 +241,7 @@ func (p *Provider) RotateToNext() (string, bool) {
 		return p.GetData().XtreamBaseURL, false
 	}
 
-	current := cleanURL(p.GetData().XtreamBaseURL)
+	current := CleanURL(p.GetData().XtreamBaseURL)
 	nextURL := all[1] // Default to second URL
 	for i, u := range all {
 		if u == current && i+1 < len(all) {

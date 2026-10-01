@@ -1081,7 +1081,10 @@ func getHlsRedirectURL(channel string) (*url.URL, error) {
 
 	url, ok := hlsChannelsRedirectURL[channel+".m3u8"]
 	if !ok {
-		return nil, errors.New("HSL redirect url not found")
+		url, ok = hlsChannelsRedirectURL[channel]
+	}
+	if !ok {
+		return nil, errors.New("HLS redirect url not found")
 	}
 
 	return &url, nil
@@ -1182,73 +1185,72 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 			return
 		}
 		id := ctx.Param("id")
-		if strings.Contains(location.String(), id) {
-			hlsChannelsRedirectURLLock.Lock()
-			hlsChannelsRedirectURL[id] = *location
-			hlsChannelsRedirectURLLock.Unlock()
+		baseID := strings.TrimSuffix(id, ".m3u8")
+		hlsChannelsRedirectURLLock.Lock()
+		hlsChannelsRedirectURL[id] = *location
+		hlsChannelsRedirectURL[baseID] = *location
+		hlsChannelsRedirectURL[baseID+".m3u8"] = *location
+		hlsChannelsRedirectURLLock.Unlock()
 
-			chunkKey := location.String()
-			isPlaylist := strings.Contains(chunkKey, ".m3u8")
+		chunkKey := location.String()
+		isPlaylist := strings.Contains(chunkKey, ".m3u8")
 
-			// Check HLS chunk RAM cache for non-playlist segments (.ts)
-			if c.chunkCache != nil && !isPlaylist {
-				if cachedData, cType, found := c.chunkCache.Get(chunkKey); found {
-					ctx.Data(http.StatusOK, cType, cachedData)
-					return
-				}
-			}
-
-			hlsReq, err := http.NewRequest("GET", location.String(), nil)
-			if err != nil {
-				ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+		// Check HLS chunk RAM cache for non-playlist segments (.ts)
+		if c.chunkCache != nil && !isPlaylist {
+			if cachedData, cType, found := c.chunkCache.Get(chunkKey); found {
+				ctx.Data(http.StatusOK, cType, cachedData)
 				return
 			}
+		}
 
-			mergeHttpHeader(hlsReq.Header, ctx.Request.Header)
-			hlsReq.Header.Set("User-Agent", c.GetUpstreamUserAgent())
-			if c.Referer != "" {
-				hlsReq.Header.Set("Referer", c.Referer)
-			}
-			cleanUpstreamHeaders(hlsReq.Header)
-
-			hlsResp, err := client.Do(hlsReq)
-			if err != nil {
-				ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
-				return
-			}
-			defer hlsResp.Body.Close()
-
-			b, err := ioutil.ReadAll(hlsResp.Body)
-			if err != nil {
-				ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
-				return
-			}
-
-			if isPlaylist {
-				body := string(b)
-				body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-				if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
-					for _, prov := range c.ProxyConfig.Provider.GetProviders() {
-						if prov.XtreamUser != "" && prov.XtreamPassword != "" {
-							body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-						}
-					}
-				}
-				mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
-				ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), []byte(body))
-				return
-			}
-
-			// Cache .ts chunk in RAM for 15s to serve other viewers watching same stream
-			if c.chunkCache != nil {
-				c.chunkCache.Set(chunkKey, b, hlsResp.Header.Get("Content-Type"))
-			}
-
-			mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
-			ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), b)
+		hlsReq, err := http.NewRequest("GET", location.String(), nil)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 			return
 		}
-		ctx.AbortWithError(http.StatusInternalServerError, errors.New("Unable to HLS stream")) // nolint: errcheck
+
+		mergeHttpHeader(hlsReq.Header, ctx.Request.Header)
+		hlsReq.Header.Set("User-Agent", c.GetUpstreamUserAgent())
+		if c.Referer != "" {
+			hlsReq.Header.Set("Referer", c.Referer)
+		}
+		cleanUpstreamHeaders(hlsReq.Header)
+
+		hlsResp, err := client.Do(hlsReq)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+			return
+		}
+		defer hlsResp.Body.Close()
+
+		b, err := ioutil.ReadAll(hlsResp.Body)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+			return
+		}
+
+		if isPlaylist {
+			body := string(b)
+			body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+			if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+				for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+					if prov.XtreamUser != "" && prov.XtreamPassword != "" {
+						body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+					}
+				}
+			}
+			mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
+			ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), []byte(body))
+			return
+		}
+
+		// Cache .ts chunk in RAM for 15s to serve other viewers watching same stream
+		if c.chunkCache != nil {
+			c.chunkCache.Set(chunkKey, b, hlsResp.Header.Get("Content-Type"))
+		}
+
+		mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
+		ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), b)
 		return
 	}
 

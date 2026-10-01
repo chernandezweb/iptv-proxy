@@ -20,17 +20,19 @@ package xtreamproxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
-	"io/ioutil"
 
 	"github.com/pierre-emmanuelJ/iptv-proxy/pkg/config"
 	xtream "github.com/tellytv/go.xtream-codes"
-	"encoding/json"
 )
 
 const (

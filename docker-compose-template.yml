@@ -4,9 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    #volumes:
-      # If your are using local m3u file instead of m3u remote file
-      # put your m3u file in this folder
+    volumes:
+      # Persistent storage for provider.json and filters.json across rebuilds
+      - ./data:/data
       #- ./iptv:/root/iptv
     container_name: "iptv-proxy"
     restart: on-failure

@@ -117,8 +117,18 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.streamHub = newStreamHub()
 	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
-	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
-	cfg.ProxyConfig.Provider = config.NewProvider("provider.json", config.ProviderData{
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
+			dataDir = "/data"
+		} else {
+			dataDir = "."
+		}
+	}
+	filtersPath := filepath.Join(dataDir, "filters.json")
+	providerPath := filepath.Join(dataDir, "provider.json")
+	cfg.ProxyConfig.Filters = config.NewFilters(filtersPath)
+	cfg.ProxyConfig.Provider = config.NewProvider(providerPath, config.ProviderData{
 		XtreamBaseURL:  cfgData.XtreamBaseURL,
 		XtreamUser:     string(cfgData.XtreamUser),
 		XtreamPassword: string(cfgData.XtreamPassword),

@@ -53,7 +53,7 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 		return
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, ctx.Request.UserAgent(), c.Referer)
+	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
 
 	// If active URL fails, attempt auto-failover across backup URLs
 	if err != nil {
@@ -62,7 +62,7 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 			if bURL == c.XtreamBaseURL {
 				continue
 			}
-			bClient, bErr := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), bURL, ctx.Request.UserAgent(), bURL)
+			bClient, bErr := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), bURL, c.GetUpstreamUserAgent(), bURL)
 			if bErr == nil {
 				c.RotateToURL(bURL)
 				client = bClient
@@ -120,6 +120,7 @@ func (c *Config) adminGetProvider(ctx *gin.Context) {
 		"xtream_user":     data.XtreamUser,
 		"xtream_password": data.XtreamPassword,
 		"referer":         data.Referer,
+		"user_agent":      data.UserAgent,
 	})
 }
 
@@ -154,6 +155,11 @@ func (c *Config) adminSaveProvider(ctx *gin.Context) {
 		payload.Referer = payload.XtreamBaseURL
 	}
 
+	payload.UserAgent = strings.TrimSpace(payload.UserAgent)
+	if payload.UserAgent == "" {
+		payload.UserAgent = config.DefaultUserAgent
+	}
+
 	if err := c.ProxyConfig.Provider.Save(payload); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -164,6 +170,7 @@ func (c *Config) adminSaveProvider(ctx *gin.Context) {
 	c.ProxyConfig.XtreamUser = config.CredentialString(payload.XtreamUser)
 	c.ProxyConfig.XtreamPassword = config.CredentialString(payload.XtreamPassword)
 	c.ProxyConfig.Referer = payload.Referer
+	c.ProxyConfig.UserAgent = payload.UserAgent
 
 	if payload.XtreamBaseURL != "" {
 		if u, err := url.Parse(payload.XtreamBaseURL); err == nil {
@@ -243,7 +250,12 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 				ref = payload.Referer
 			}
 
-			client, err := xtreamapi.New(user, pass, targetURL, ctx.Request.UserAgent(), ref)
+			testUA := strings.TrimSpace(payload.UserAgent)
+			if testUA == "" {
+				testUA = c.GetUpstreamUserAgent()
+			}
+
+			client, err := xtreamapi.New(user, pass, targetURL, testUA, ref)
 			latency := time.Since(start).Milliseconds()
 
 			if err != nil {

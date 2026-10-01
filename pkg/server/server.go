@@ -58,6 +58,8 @@ type Config struct {
 
 	metadataCache *responseCache
 	xmltvCache    *responseCache
+	chunkCache    *chunkCache
+	streamHub     *StreamHub
 	httpClient    *http.Client
 	baseStreamURL *url.URL
 
@@ -100,6 +102,8 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	}
 	cfg.metadataCache = newResponseCache(cfgData.MetadataCacheTTL)
 	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
+	cfg.chunkCache = newChunkCache(15 * time.Second)
+	cfg.streamHub = newStreamHub()
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
 	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
 	cfg.ProxyConfig.Provider = config.NewProvider("provider.json", config.ProviderData{
@@ -115,6 +119,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.ProxyConfig.XtreamUser = config.CredentialString(provData.XtreamUser)
 	cfg.ProxyConfig.XtreamPassword = config.CredentialString(provData.XtreamPassword)
 	cfg.ProxyConfig.Referer = provData.Referer
+	cfg.ProxyConfig.UserAgent = provData.UserAgent
 	if provData.XtreamBaseURL != "" {
 		if u, err := url.Parse(provData.XtreamBaseURL); err == nil {
 			cfg.baseStreamURL = u
@@ -247,12 +252,12 @@ func newUpstreamHTTPClient(cfg *Config) *http.Client {
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     false,
-		MaxIdleConns:          256,
-		MaxIdleConnsPerHost:   16,
-		MaxConnsPerHost:       64,
+		MaxIdleConns:          512,
+		MaxIdleConnsPerHost:   128,
+		MaxConnsPerHost:       256,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 15 * time.Second,
+		ResponseHeaderTimeout: 20 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
@@ -260,6 +265,14 @@ func newUpstreamHTTPClient(cfg *Config) *http.Client {
 		Transport: transport,
 		Timeout:   0,
 	}
+}
+
+// GetUpstreamUserAgent returns configured masquerade User-Agent or default Chrome UA.
+func (c *Config) GetUpstreamUserAgent() string {
+	if c != nil && c.ProxyConfig != nil && c.ProxyConfig.UserAgent != "" {
+		return c.ProxyConfig.UserAgent
+	}
+	return config.DefaultUserAgent
 }
 
 // GetAllProviderURLs returns all configured URLs (active URL followed by backup URLs).
@@ -302,6 +315,9 @@ func (c *Config) RotateToURL(newURL string) {
 	}
 	if c.xmltvCache != nil {
 		c.xmltvCache.Clear()
+	}
+	if c.chunkCache != nil {
+		c.chunkCache.Clear()
 	}
 }
 

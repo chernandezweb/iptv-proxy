@@ -9,6 +9,9 @@ import (
 	"sync"
 )
 
+// DefaultUserAgent is the standard upstream User-Agent to avoid player fingerprinting and blocks.
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
 // ProviderData contains upstream Xtream provider settings and backup URL list.
 type ProviderData struct {
 	XtreamBaseURL  string   `json:"xtream_base_url"`
@@ -16,6 +19,7 @@ type ProviderData struct {
 	XtreamUser     string   `json:"xtream_user"`
 	XtreamPassword string   `json:"xtream_password"`
 	Referer        string   `json:"referer"`
+	UserAgent      string   `json:"user_agent"`
 }
 
 // Provider manages persistent provider configuration.
@@ -27,6 +31,9 @@ type Provider struct {
 
 // NewProvider initializes Provider settings from disk or defaults.
 func NewProvider(path string, defaults ProviderData) *Provider {
+	if defaults.UserAgent == "" {
+		defaults.UserAgent = DefaultUserAgent
+	}
 	p := &Provider{
 		Path: path,
 		Data: defaults,
@@ -97,6 +104,11 @@ func (p *Provider) Load() {
 	} else if p.Data.XtreamBaseURL != "" {
 		p.Data.Referer = p.Data.XtreamBaseURL
 	}
+	if loaded.UserAgent != "" {
+		p.Data.UserAgent = loaded.UserAgent
+	} else if p.Data.UserAgent == "" {
+		p.Data.UserAgent = DefaultUserAgent
+	}
 	log.Println("[iptv-proxy] Loaded provider.json successfully")
 }
 
@@ -111,6 +123,9 @@ func (p *Provider) Save(data ProviderData) error {
 		data.Referer = data.XtreamBaseURL
 	} else {
 		data.Referer = cleanURL(data.Referer)
+	}
+	if data.UserAgent == "" {
+		data.UserAgent = DefaultUserAgent
 	}
 
 	p.Data = data

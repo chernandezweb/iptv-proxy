@@ -710,6 +710,41 @@
                     </div>
                     <span class="help-text">Your IPTV provider account password</span>
                 </div>
+
+                <!-- User-Agent Masquerade -->
+                <div class="form-group full-width">
+                    <label for="userAgent">
+                        <span>Upstream User-Agent Masquerade</span>
+                        <span class="label-code">USER_AGENT</span>
+                    </label>
+                    <div class="input-wrapper">
+                        <input type="text" id="userAgent" placeholder="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" autocomplete="off">
+                    </div>
+                    <span class="help-text">
+                        All 12+ devices across different networks are disguised under this single User-Agent to prevent provider bans triggered by mixed player fingerprints.
+                    </span>
+                    <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('chrome')">🌐 Chrome (Default)</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('tivimate')">📺 TiviMate</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('smarters')">📱 IPTV Smarters</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('vlc')">🎬 VLC</button>
+                    </div>
+                </div>
+
+                <!-- Active Protections Summary Card -->
+                <div class="form-group full-width">
+                    <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-top: 0.5rem;">
+                        <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
+                            🛡️ High-Concurrency &amp; Anti-Blocking Engine Active (12+ Devices)
+                        </h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
+                            <div>🔒 <strong>IP Leak Shield:</strong> Strips <code>X-Forwarded-For</code> &amp; client IP headers. Provider only sees VPS IP.</div>
+                            <div>🔄 <strong>Shared Stream Relay:</strong> Multiple devices watching the same live channel share 1 upstream connection.</div>
+                            <div>⚡ <strong>HLS RAM Cache:</strong> In-memory chunk cache eliminates duplicate segment downloads across devices.</div>
+                            <div>🚀 <strong>Connection Pooling:</strong> Tuned 128-conn Keep-Alive pool with zero-allocation 128KB buffers.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="form-actions">
@@ -843,6 +878,24 @@
             .filter(line => line.length > 0);
     }
 
+    function setUAPreset(type) {
+        const input = document.getElementById('userAgent');
+        switch (type) {
+            case 'chrome':
+                input.value = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+                break;
+            case 'tivimate':
+                input.value = 'TiviMate/4.7.0 (Android TV)';
+                break;
+            case 'smarters':
+                input.value = 'IPTVSmartersPro/3.1.5 (Linux; Android 12)';
+                break;
+            case 'vlc':
+                input.value = 'VLC/3.0.18 LibVLC/3.0.18';
+                break;
+        }
+    }
+
     async function loadProvider() {
         try {
             const res = await fetch('/admin/api/provider');
@@ -853,6 +906,7 @@
             document.getElementById('xtreamBaseURL').value = data.xtream_base_url || '';
             document.getElementById('xtreamUser').value = data.xtream_user || '';
             document.getElementById('xtreamPassword').value = data.xtream_password || '';
+            document.getElementById('userAgent').value = data.user_agent || '';
 
             const backups = data.backup_urls || [];
             document.getElementById('backupURLs').value = backups.join('\n');
@@ -880,7 +934,8 @@
             backup_urls: getBackupURLsFromText(),
             xtream_user: document.getElementById('xtreamUser').value.trim(),
             xtream_password: document.getElementById('xtreamPassword').value.trim(),
-            referer: document.getElementById('referer').value.trim()
+            referer: document.getElementById('referer').value.trim(),
+            user_agent: document.getElementById('userAgent').value.trim()
         };
 
         const resultCard = document.getElementById('testResultCard');
@@ -992,7 +1047,8 @@
             backup_urls: getBackupURLsFromText(),
             xtream_user: document.getElementById('xtreamUser').value.trim(),
             xtream_password: document.getElementById('xtreamPassword').value.trim(),
-            referer: document.getElementById('referer').value.trim()
+            referer: document.getElementById('referer').value.trim(),
+            user_agent: document.getElementById('userAgent').value.trim()
         };
 
         try {

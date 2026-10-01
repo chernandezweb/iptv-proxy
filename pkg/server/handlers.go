@@ -75,6 +75,14 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 
 	requestRangeHeader := ctx.Request.Header.Get("Range")
 	forwardRange := requestRangeHeader != ""
+
+	// Check if this stream can be multiplexed through the shared stream hub
+	if c.streamHub != nil && !forwardRange && strings.Contains(oriURL.Path, ".ts") {
+		if c.streamHub.TryPlaySharedStream(ctx, c, client, oriURL) {
+			return
+		}
+	}
+
 	resp, err := c.forwardStreamRequest(ctx, client, oriURL, forwardRange)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
@@ -130,8 +138,10 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 
 	mergeHttpHeader(ctx.Writer.Header(), resp.Header)
 	ctx.Status(resp.StatusCode)
+	bufPtr := streamBufferPool.Get().(*[]byte)
+	defer streamBufferPool.Put(bufPtr)
 	ctx.Stream(func(w io.Writer) bool {
-		io.Copy(w, resp.Body) // nolint: errcheck
+		io.CopyBuffer(w, resp.Body, *bufPtr) // nolint: errcheck
 		return false
 	})
 }
@@ -144,16 +154,15 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 
 	mergeHttpHeader(req.Header, ctx.Request.Header)
 
-	if ua := ctx.Request.UserAgent(); ua != "" {
-		req.Header.Set("User-Agent", ua)
-	}
+	// User-Agent masquerading: use single unified User-Agent for all devices to prevent fingerprinting
+	req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
+
 	if c.Referer != "" {
 		req.Header.Set("Referer", c.Referer)
 	}
 
-	// Do not leak client auth headers to the upstream provider.
-	req.Header.Del("Authorization")
-	req.Header.Del("Proxy-Authorization")
+	// Anti-IP leak: strip all proxy and client IP headers so provider only sees VPS IP
+	cleanUpstreamHeaders(req.Header)
 
 	if forwardRange && ctx.Request.Header.Get("Range") != "" {
 		req.Header.Set("Range", ctx.Request.Header.Get("Range"))
@@ -376,3 +385,33 @@ func captureErrorBody(status int, body []byte) (string, error) {
 
 	return path, nil
 }
+
+var streamBufferPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 128*1024) // 128KB buffer for high-throughput streaming
+		return &b
+	},
+}
+
+// cleanUpstreamHeaders strips all client and proxy IP forwarding headers to prevent
+// upstream IPTV providers from detecting that 12+ devices across different networks
+// are using the same account.
+func cleanUpstreamHeaders(h http.Header) {
+	h.Del("X-Forwarded-For")
+	h.Del("X-Real-IP")
+	h.Del("X-Client-IP")
+	h.Del("CF-Connecting-IP")
+	h.Del("True-Client-IP")
+	h.Del("Client-IP")
+	h.Del("X-Forwarded-Proto")
+	h.Del("X-Forwarded-Host")
+	h.Del("X-Forwarded-Port")
+	h.Del("X-Forwarded-Server")
+	h.Del("Forwarded")
+	h.Del("Via")
+
+	// Strip client authentication headers
+	h.Del("Authorization")
+	h.Del("Proxy-Authorization")
+}
+

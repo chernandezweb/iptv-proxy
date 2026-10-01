@@ -56,6 +56,7 @@ type ProxyConfig struct {
 	Provider             *Provider
 	BackupURLs           []string
 	Referer              string
+	UserAgent            string
 	M3UFileName          string
 	CustomEndpoint       string
 	CustomId             string

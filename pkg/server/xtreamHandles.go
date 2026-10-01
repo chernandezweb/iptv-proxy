@@ -71,9 +71,6 @@ func getClientForProvider(prov config.ProviderItem) (*xtreamapi.Client, error) {
 			continue
 		}
 		ref := prov.Referer
-		if ref == "" {
-			ref = uClean
-		}
 		ua := prov.UserAgent
 		if ua == "" {
 			ua = config.DefaultUserAgent

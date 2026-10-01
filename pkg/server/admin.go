@@ -250,13 +250,13 @@ func (c *Config) adminTestProviders(ctx *gin.Context) {
 			var urlWg sync.WaitGroup
 			for uIdx, targetURL := range urlsToTest {
 				urlWg.Add(1)
-				go func(resIdx int, tURL string) {
+				go func(resIdx int, tURL string, delayMs int) {
 					defer urlWg.Done()
+					if delayMs > 0 {
+						time.Sleep(time.Duration(delayMs) * time.Millisecond)
+					}
 					start := time.Now()
 					ref := p.Referer
-					if ref == "" {
-						ref = tURL
-					}
 					ua := p.UserAgent
 					if ua == "" {
 						ua = c.GetUpstreamUserAgent()
@@ -303,7 +303,7 @@ func (c *Config) adminTestProviders(ctx *gin.Context) {
 						MaxConnections:  maxConnStr,
 						ServerURL:       client.ServerInfo.URL,
 					}
-				}(uIdx, targetURL)
+				}(uIdx, targetURL, uIdx*200)
 			}
 			urlWg.Wait()
 

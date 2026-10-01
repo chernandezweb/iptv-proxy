@@ -10,7 +10,7 @@ import (
 )
 
 // DefaultUserAgent is the standard upstream User-Agent to avoid player fingerprinting and blocks.
-const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+const DefaultUserAgent = "IPTVSmartersPro"
 
 // ProviderData contains upstream Xtream provider settings and backup URL list.
 type ProviderData struct {
@@ -157,9 +157,9 @@ func (p *Provider) Load() {
 	} else if p.Data.XtreamBaseURL != "" {
 		p.Data.Referer = p.Data.XtreamBaseURL
 	}
-	if loaded.UserAgent != "" {
+	if loaded.UserAgent != "" && !strings.Contains(loaded.UserAgent, "Chrome/128") {
 		p.Data.UserAgent = loaded.UserAgent
-	} else if p.Data.UserAgent == "" {
+	} else {
 		p.Data.UserAgent = DefaultUserAgent
 	}
 	log.Println("[iptv-proxy] Loaded provider.json successfully")

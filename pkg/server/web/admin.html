@@ -718,15 +718,15 @@
                         <span class="label-code">USER_AGENT</span>
                     </label>
                     <div class="input-wrapper">
-                        <input type="text" id="userAgent" placeholder="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" autocomplete="off">
+                        <input type="text" id="userAgent" placeholder="IPTVSmartersPro (Default)" autocomplete="off">
                     </div>
                     <span class="help-text">
                         All 12+ devices across different networks are disguised under this single User-Agent to prevent provider bans triggered by mixed player fingerprints.
                     </span>
                     <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('chrome')">🌐 Chrome (Default)</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('smarters')">📱 IPTV Smarters (Default)</button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('tivimate')">📺 TiviMate</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('smarters')">📱 IPTV Smarters</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('chrome')">🌐 Chrome</button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('vlc')">🎬 VLC</button>
                     </div>
                 </div>
@@ -881,14 +881,14 @@
     function setUAPreset(type) {
         const input = document.getElementById('userAgent');
         switch (type) {
-            case 'chrome':
-                input.value = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+            case 'smarters':
+                input.value = 'IPTVSmartersPro';
                 break;
             case 'tivimate':
                 input.value = 'TiviMate/4.7.0 (Android TV)';
                 break;
-            case 'smarters':
-                input.value = 'IPTVSmartersPro/3.1.5 (Linux; Android 12)';
+            case 'chrome':
+                input.value = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
                 break;
             case 'vlc':
                 input.value = 'VLC/3.0.18 LibVLC/3.0.18';

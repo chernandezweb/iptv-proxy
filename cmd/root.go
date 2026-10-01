@@ -145,7 +145,7 @@ func init() {
 	rootCmd.Flags().Duration("metadata-cache-ttl", 5*time.Minute, "Cache duration for heavy Xtream metadata actions (set to 0 to disable)")
 	rootCmd.Flags().Duration("xmltv-cache-ttl", 30*time.Minute, "Cache duration for xmltv.php responses (set to 0 to disable)")
 	rootCmd.Flags().String("referer", "", "IPTV provider referer header e.g(https://example.com)")
-	rootCmd.Flags().String("user-agent", "", "Upstream User-Agent header (defaults to standard Chrome UA)")
+	rootCmd.Flags().String("user-agent", "", "Upstream User-Agent header (defaults to IPTVSmartersPro)")
 
 
 	if e := viper.BindPFlags(rootCmd.Flags()); e != nil {

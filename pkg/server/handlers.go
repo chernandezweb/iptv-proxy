@@ -177,7 +177,7 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	}
 
 	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode < 500 {
+	if err == nil && resp.StatusCode < 400 {
 		return resp, nil
 	}
 
@@ -212,7 +212,7 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 
 			log.Printf("[iptv-proxy] Upstream %s failed/down (err=%v); attempting failover to backup URL %s...", currentHost, err, bURL)
 			bResp, bErr := client.Do(backupReq)
-			if bErr == nil && bResp.StatusCode < 500 {
+			if bErr == nil && bResp.StatusCode < 400 {
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
 				}

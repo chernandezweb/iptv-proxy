@@ -1109,8 +1109,20 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	cleanUpstreamHeaders(req.Header)
 
 	resp, err := client.Do(req)
-	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+	if err != nil || (resp != nil && resp.StatusCode >= 400) {
 		backupURLs := c.GetAllProviderURLs()
+		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+				if strings.Contains(prov.XtreamBaseURL, req.URL.Host) {
+					for _, b := range prov.BackupURLs {
+						if cb := config.CleanURL(b); cb != "" {
+							backupURLs = append(backupURLs, cb)
+						}
+					}
+					break
+				}
+			}
+		}
 		if len(backupURLs) > 1 {
 			for _, bURL := range backupURLs {
 				parsedB, errB := url.Parse(bURL)
@@ -1124,7 +1136,7 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 				bReq.Header.Set("Referer", bURL)
 
 				bResp, bErr := client.Do(bReq)
-				if bErr == nil && bResp.StatusCode < 500 {
+				if bErr == nil && bResp.StatusCode < 400 {
 					if resp != nil && resp.Body != nil {
 						resp.Body.Close()
 					}

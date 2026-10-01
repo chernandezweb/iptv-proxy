@@ -941,12 +941,16 @@
         const resultCard = document.getElementById('testResultCard');
         const tableBody = document.getElementById('urlTableBody');
 
+        resultCard.style.display = 'block';
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted);"><span class="spinner"></span> Testing all provider URLs with current credentials...</td></tr>`;
+
         try {
             const res = await fetch('/admin/api/provider/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
             if (data.results && data.results.length > 0) {
@@ -993,6 +997,7 @@
                 showToast(data.error || 'Test failed', 'error');
             }
         } catch (e) {
+            tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--danger);">Failed to test URLs: ${escapeHtml(e.message)}</td></tr>`;
             showToast('Test request failed: ' + e.message, 'error');
         } finally {
             btn.disabled = false;

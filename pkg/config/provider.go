@@ -411,6 +411,16 @@ func (p *Provider) SetActiveURL(newURL string) error {
 	}
 	p.Data.BackupURLs = newBackups
 
+	// Sync with active provider item in multi-provider list so all URLs remain in pool
+	for i := range p.Data.Providers {
+		if p.Data.Providers[i].Enabled {
+			p.Data.Providers[i].XtreamBaseURL = newClean
+			p.Data.Providers[i].BackupURLs = newBackups
+			p.Data.Providers[i].Referer = newClean
+			break
+		}
+	}
+
 	bytes, err := json.MarshalIndent(p.Data, "", "  ")
 	if err != nil {
 		return err

@@ -498,7 +498,6 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 			if !c.refreshing[cacheKey] {
 				c.refreshing[cacheKey] = true
 				c.refreshingMutex.Unlock()
-				userAgent := ctx.Request.UserAgent()
 
 				go func() {
 					defer func() {

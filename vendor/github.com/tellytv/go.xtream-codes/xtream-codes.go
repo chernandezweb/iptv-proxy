@@ -30,14 +30,20 @@ func getHTTPClient() *http.Client {
 	transport := &http.Transport{
 		Proxy: proxyFunc,
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
+			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		TLSHandshakeTimeout: 10 * time.Second,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          512,
+		MaxIdleConnsPerHost:   64,
+		MaxConnsPerHost:       128,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 	return &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
+		Timeout:   60 * time.Second,
 	}
 }
 

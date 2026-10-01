@@ -279,6 +279,12 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 				return
 			}
 
+			expDateStr := ""
+			if client.UserInfo.ExpDate != nil && !client.UserInfo.ExpDate.IsZero() {
+				expDateStr = client.UserInfo.ExpDate.Time.Format("2006-01-02")
+			}
+			maxConnStr := fmt.Sprintf("%d", client.UserInfo.MaxConnections)
+
 			results[idx] = urlTestResult{
 				URL:             targetURL,
 				Online:          true,
@@ -286,8 +292,8 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 				CategoriesCount: len(liveCats),
 				Message:         fmt.Sprintf("Online! Found %d live categories.", len(liveCats)),
 				Status:          client.UserInfo.Status,
-				ExpDate:         client.UserInfo.ExpDate,
-				MaxConnections:  client.UserInfo.MaxConnections,
+				ExpDate:         expDateStr,
+				MaxConnections:  maxConnStr,
 				ServerURL:       client.ServerInfo.URL,
 			}
 		}(i, testURL)

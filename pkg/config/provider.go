@@ -42,7 +42,7 @@ func NewProvider(path string, defaults ProviderData) *Provider {
 	return p
 }
 
-// CleanURL sanitizes provider URLs, ensuring a single valid http(s) scheme and stripping redundant slashes.
+// CleanURL sanitizes provider URLs, ensuring a single valid http(s) scheme and stripping redundant slashes or duplicate schemes.
 func CleanURL(u string) string {
 	u = strings.TrimSpace(u)
 	if u == "" {
@@ -50,16 +50,47 @@ func CleanURL(u string) string {
 	}
 
 	scheme := "http://"
-	lower := strings.ToLower(u)
-	if strings.HasPrefix(lower, "https://") {
+	if strings.HasPrefix(strings.ToLower(u), "https") {
 		scheme = "https://"
-		u = u[8:]
-	} else if strings.HasPrefix(lower, "http://") {
-		scheme = "http://"
-		u = u[7:]
 	}
 
-	u = strings.TrimLeft(u, "/")
+	// Repeatedly strip any leading protocol artifacts like "http://", "https://", "http:/", "http//", "http:", "http", etc.
+	for {
+		lower := strings.ToLower(u)
+		if strings.HasPrefix(lower, "https://") {
+			u = u[8:]
+		} else if strings.HasPrefix(lower, "http://") {
+			u = u[7:]
+		} else if strings.HasPrefix(lower, "https:/") {
+			u = u[7:]
+		} else if strings.HasPrefix(lower, "http:/") {
+			u = u[6:]
+		} else if strings.HasPrefix(lower, "https:") {
+			u = u[6:]
+		} else if strings.HasPrefix(lower, "http:") {
+			u = u[5:]
+		} else if strings.HasPrefix(lower, "https//") {
+			u = u[7:]
+		} else if strings.HasPrefix(lower, "http//") {
+			u = u[6:]
+		} else if strings.HasPrefix(lower, "https/") {
+			u = u[6:]
+		} else if strings.HasPrefix(lower, "http/") {
+			u = u[5:]
+		} else if strings.HasPrefix(lower, "https") && len(u) > 5 && !strings.Contains(u[:6], ".") {
+			u = u[5:]
+		} else if strings.HasPrefix(lower, "http") && len(u) > 4 && !strings.Contains(u[:5], ".") {
+			u = u[4:]
+		} else if strings.HasPrefix(u, "/") {
+			u = strings.TrimLeft(u, "/")
+		} else if strings.HasPrefix(u, ":") {
+			u = strings.TrimLeft(u, ":")
+		} else {
+			break
+		}
+	}
+
+	u = strings.TrimSpace(u)
 	if u == "" {
 		return ""
 	}

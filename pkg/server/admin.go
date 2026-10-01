@@ -246,7 +246,7 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 
 			start := time.Now()
 			ref := targetURL
-			if payload.Referer != "" {
+			if payload.Referer != "" && payload.Referer != payload.XtreamBaseURL {
 				ref = payload.Referer
 			}
 

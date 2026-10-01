@@ -357,6 +357,8 @@ func (c *XtreamClient) sendRequest(action string, parameters url.Values) ([]byte
 	}
 
 	request.Header.Set("User-Agent", c.UserAgent)
+	request.Header.Set("Accept", "*/*")
+	request.Header.Set("Connection", "keep-alive")
 	if c.Referer != "" {
 		request.Header.Set("Referer", c.Referer)
 	}

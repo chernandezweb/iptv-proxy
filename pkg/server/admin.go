@@ -34,10 +34,14 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/provider/rotate", c.adminRotateProvider)
 
 	// Static files from embedded FS
-	admin.GET("/", func(ctx *gin.Context) {
+	adminHandler := func(ctx *gin.Context) {
 		html, _ := webFS.ReadFile("web/admin.html")
 		ctx.Data(http.StatusOK, "text/html; charset=utf-8", html)
-	})
+	}
+	admin.GET("", adminHandler)
+	admin.GET("/", adminHandler)
+	admin.HEAD("", adminHandler)
+	admin.HEAD("/", adminHandler)
 }
 
 func (c *Config) adminGetCategories(ctx *gin.Context) {

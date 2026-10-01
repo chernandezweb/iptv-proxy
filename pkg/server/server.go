@@ -267,8 +267,18 @@ func (c *Config) replaceURL(uri string, trackIndex int, xtream bool) (string, er
 }
 
 func newUpstreamHTTPClient(cfg *Config) *http.Client {
+	proxyFunc := http.ProxyFromEnvironment
+	for _, envKey := range []string{"ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		if val := os.Getenv(envKey); val != "" {
+			if u, err := url.Parse(val); err == nil {
+				proxyFunc = http.ProxyURL(u)
+				break
+			}
+		}
+	}
+
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy: proxyFunc,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,

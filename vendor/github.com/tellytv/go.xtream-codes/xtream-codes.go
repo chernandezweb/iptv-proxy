@@ -7,12 +7,39 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+	"time"
 )
 
 var defaultUserAgent = "go.xstream-codes (Go-http-client/1.1)"
+
+func getHTTPClient() *http.Client {
+	proxyFunc := http.ProxyFromEnvironment
+	for _, envKey := range []string{"ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		if val := os.Getenv(envKey); val != "" {
+			if u, err := url.Parse(val); err == nil {
+				proxyFunc = http.ProxyURL(u)
+				break
+			}
+		}
+	}
+	transport := &http.Transport{
+		Proxy: proxyFunc,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+}
 
 // XtreamClient is the client used to communicate with a Xtream-Codes server.
 type XtreamClient struct {
@@ -47,7 +74,7 @@ func NewClient(username, password, baseURL string) (*XtreamClient, error) {
 		BaseURL:   baseURL,
 		UserAgent: defaultUserAgent,
 
-		HTTP:    http.DefaultClient,
+		HTTP:    getHTTPClient(),
 		Context: context.Background(),
 
 		streams: make(map[int]Stream),
@@ -104,7 +131,7 @@ func NewClientWithConfig(ctx context.Context, username, password, baseURL, userA
 		UserAgent: userAgent,
 		Referer:   referer,
 
-		HTTP:    http.DefaultClient,
+		HTTP:    getHTTPClient(),
 		Context: ctx,
 
 		streams: make(map[int]Stream),

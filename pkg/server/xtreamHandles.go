@@ -1089,6 +1089,7 @@ func getHlsRedirectURL(channel string) (*url.URL, error) {
 
 func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	client := &http.Client{
+		Transport: c.httpClient.Transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

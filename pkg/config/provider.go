@@ -42,15 +42,37 @@ func NewProvider(path string, defaults ProviderData) *Provider {
 	return p
 }
 
-func cleanURL(u string) string {
-	return strings.TrimRight(strings.TrimSpace(u), "/")
+// CleanURL sanitizes provider URLs, ensuring a single valid http(s) scheme and stripping redundant slashes.
+func CleanURL(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return ""
+	}
+
+	scheme := "http://"
+	lower := strings.ToLower(u)
+	if strings.HasPrefix(lower, "https://") {
+		scheme = "https://"
+		u = u[8:]
+	} else if strings.HasPrefix(lower, "http://") {
+		scheme = "http://"
+		u = u[7:]
+	}
+
+	u = strings.TrimLeft(u, "/")
+	if u == "" {
+		return ""
+	}
+
+	return scheme + strings.TrimRight(u, "/")
 }
 
-func cleanURLList(urls []string) []string {
+// CleanURLList returns a deduplicated list of sanitized URLs.
+func CleanURLList(urls []string) []string {
 	var cleaned []string
 	seen := make(map[string]bool)
 	for _, raw := range urls {
-		u := cleanURL(raw)
+		u := CleanURL(raw)
 		if u != "" && !seen[u] {
 			seen[u] = true
 			cleaned = append(cleaned, u)
@@ -88,10 +110,10 @@ func (p *Provider) Load() {
 	}
 
 	if loaded.XtreamBaseURL != "" {
-		p.Data.XtreamBaseURL = cleanURL(loaded.XtreamBaseURL)
+		p.Data.XtreamBaseURL = CleanURL(loaded.XtreamBaseURL)
 	}
 	if len(loaded.BackupURLs) > 0 {
-		p.Data.BackupURLs = cleanURLList(loaded.BackupURLs)
+		p.Data.BackupURLs = CleanURLList(loaded.BackupURLs)
 	}
 	if loaded.XtreamUser != "" {
 		p.Data.XtreamUser = loaded.XtreamUser
@@ -100,7 +122,7 @@ func (p *Provider) Load() {
 		p.Data.XtreamPassword = loaded.XtreamPassword
 	}
 	if loaded.Referer != "" {
-		p.Data.Referer = cleanURL(loaded.Referer)
+		p.Data.Referer = CleanURL(loaded.Referer)
 	} else if p.Data.XtreamBaseURL != "" {
 		p.Data.Referer = p.Data.XtreamBaseURL
 	}
@@ -117,12 +139,12 @@ func (p *Provider) Save(data ProviderData) error {
 	p.Lock()
 	defer p.Unlock()
 
-	data.XtreamBaseURL = cleanURL(data.XtreamBaseURL)
-	data.BackupURLs = cleanURLList(data.BackupURLs)
+	data.XtreamBaseURL = CleanURL(data.XtreamBaseURL)
+	data.BackupURLs = CleanURLList(data.BackupURLs)
 	if data.Referer == "" && data.XtreamBaseURL != "" {
 		data.Referer = data.XtreamBaseURL
 	} else {
-		data.Referer = cleanURL(data.Referer)
+		data.Referer = CleanURL(data.Referer)
 	}
 	if data.UserAgent == "" {
 		data.UserAgent = DefaultUserAgent
@@ -153,14 +175,14 @@ func (p *Provider) GetAllURLs() []string {
 	var all []string
 	seen := make(map[string]bool)
 
-	active := cleanURL(p.Data.XtreamBaseURL)
+	active := CleanURL(p.Data.XtreamBaseURL)
 	if active != "" {
 		all = append(all, active)
 		seen[active] = true
 	}
 
 	for _, b := range p.Data.BackupURLs {
-		cleaned := cleanURL(b)
+		cleaned := CleanURL(b)
 		if cleaned != "" && !seen[cleaned] {
 			all = append(all, cleaned)
 			seen[cleaned] = true
@@ -175,7 +197,7 @@ func (p *Provider) SetActiveURL(newURL string) error {
 	p.Lock()
 	defer p.Unlock()
 
-	newClean := cleanURL(newURL)
+	newClean := CleanURL(newURL)
 	if newClean == "" || newClean == p.Data.XtreamBaseURL {
 		return nil
 	}
@@ -197,7 +219,7 @@ func (p *Provider) SetActiveURL(newURL string) error {
 	}
 
 	for _, b := range p.Data.BackupURLs {
-		cb := cleanURL(b)
+		cb := CleanURL(b)
 		if cb != "" && !seen[cb] {
 			newBackups = append(newBackups, cb)
 			seen[cb] = true

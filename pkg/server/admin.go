@@ -211,7 +211,7 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 		return
 	}
 
-	primaryURL := strings.TrimRight(strings.TrimSpace(payload.XtreamBaseURL), "/")
+	primaryURL := config.CleanURL(payload.XtreamBaseURL)
 	user := strings.TrimSpace(payload.XtreamUser)
 	pass := strings.TrimSpace(payload.XtreamPassword)
 
@@ -229,7 +229,7 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 		seen[primaryURL] = true
 	}
 	for _, b := range payload.BackupURLs {
-		cb := strings.TrimRight(strings.TrimSpace(b), "/")
+		cb := config.CleanURL(b)
 		if cb != "" && !seen[cb] {
 			urlsToTest = append(urlsToTest, cb)
 			seen[cb] = true
@@ -323,7 +323,7 @@ func (c *Config) adminRotateProvider(ctx *gin.Context) {
 	}
 	ctx.BindJSON(&body)
 
-	target := strings.TrimRight(strings.TrimSpace(body.URL), "/")
+	target := config.CleanURL(body.URL)
 	if target != "" {
 		c.RotateToURL(target)
 		ctx.JSON(http.StatusOK, gin.H{

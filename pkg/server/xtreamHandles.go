@@ -41,7 +41,27 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var (
+	provClientCache     = map[string]*xtreamapi.Client{}
+	provClientCacheLock = sync.RWMutex{}
+)
+
+func invalidateClientForProvider(prov config.ProviderItem) {
+	cacheKey := prov.XtreamUser + ":" + prov.XtreamPassword + "@" + prov.XtreamBaseURL
+	provClientCacheLock.Lock()
+	delete(provClientCache, cacheKey)
+	provClientCacheLock.Unlock()
+}
+
 func getClientForProvider(prov config.ProviderItem) (*xtreamapi.Client, error) {
+	cacheKey := prov.XtreamUser + ":" + prov.XtreamPassword + "@" + prov.XtreamBaseURL
+	provClientCacheLock.RLock()
+	if cli, ok := provClientCache[cacheKey]; ok && cli != nil {
+		provClientCacheLock.RUnlock()
+		return cli, nil
+	}
+	provClientCacheLock.RUnlock()
+
 	urls := []string{prov.XtreamBaseURL}
 	urls = append(urls, prov.BackupURLs...)
 	var lastErr error
@@ -60,6 +80,9 @@ func getClientForProvider(prov config.ProviderItem) (*xtreamapi.Client, error) {
 		}
 		cli, err := xtreamapi.New(prov.XtreamUser, prov.XtreamPassword, uClean, ua, ref)
 		if err == nil {
+			provClientCacheLock.Lock()
+			provClientCache[cacheKey] = cli
+			provClientCacheLock.Unlock()
 			return cli, nil
 		}
 		lastErr = err
@@ -798,6 +821,9 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		subQ.Set("stream_id", origID)
 		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
 		if err != nil {
+			if httpcode == http.StatusUnauthorized || httpcode == http.StatusForbidden {
+				invalidateClientForProvider(targetProv)
+			}
 			ctx.AbortWithError(httpcode, err)
 			return
 		}
@@ -810,6 +836,9 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		}
 		resp, httpcode, err = client.Action(c.ProxyConfig, action, q)
 		if err != nil {
+			if httpcode == http.StatusUnauthorized || httpcode == http.StatusForbidden {
+				invalidateClientForProvider(enabled[0])
+			}
 			ctx.AbortWithError(httpcode, err)
 			return
 		}
@@ -1035,7 +1064,7 @@ func (c *Config) metadataCacheKey(action string, q url.Values) (string, bool) {
 	}
 
 	switch action {
-	case "get_series", "get_series_info":
+	case "get_series", "get_series_info", "get_short_epg", "get_simple_data_table":
 		return action + "|" + canonicalizeQuery(q), true
 	default:
 		return "", false
@@ -1164,16 +1193,11 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 			return
 		}
-		body := string(b)
-		body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
-			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
-				if prov.XtreamUser != "" && prov.XtreamPassword != "" {
-					body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-				}
-			}
-		}
+		body := c.rewriteM3U8Body(string(b), ctx, oriURL)
 		mergeHttpHeader(ctx.Writer.Header(), resp.Header)
+		ctx.Header("Access-Control-Allow-Origin", "*")
+		ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Data(http.StatusOK, resp.Header.Get("Content-Type"), []byte(body))
 		return
 	}
@@ -1198,6 +1222,7 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		// Check HLS chunk RAM cache for non-playlist segments (.ts)
 		if c.chunkCache != nil && !isPlaylist {
 			if cachedData, cType, found := c.chunkCache.Get(chunkKey); found {
+				ctx.Header("Access-Control-Allow-Origin", "*")
 				ctx.Data(http.StatusOK, cType, cachedData)
 				return
 			}
@@ -1230,16 +1255,11 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		}
 
 		if isPlaylist {
-			body := string(b)
-			body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-			if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
-				for _, prov := range c.ProxyConfig.Provider.GetProviders() {
-					if prov.XtreamUser != "" && prov.XtreamPassword != "" {
-						body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
-					}
-				}
-			}
+			body := c.rewriteM3U8Body(string(b), ctx, location)
 			mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
+			ctx.Header("Access-Control-Allow-Origin", "*")
+			ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			ctx.Header("Access-Control-Allow-Headers", "*")
 			ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), []byte(body))
 			return
 		}
@@ -1250,9 +1270,45 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		}
 
 		mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
+		ctx.Header("Access-Control-Allow-Origin", "*")
+		ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		ctx.Header("Access-Control-Allow-Headers", "*")
 		ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), b)
 		return
 	}
 
 	ctx.Status(resp.StatusCode)
+}
+
+func (c *Config) rewriteM3U8Body(body string, ctx *gin.Context, location *url.URL) string {
+	body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+			if prov.XtreamUser != "" && prov.XtreamPassword != "" {
+				body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+			}
+		}
+	}
+
+	proxyScheme := "http"
+	if ctx.Request.TLS != nil || ctx.GetHeader("X-Forwarded-Proto") == "https" {
+		proxyScheme = "https"
+	}
+	proxyBase := proxyScheme + "://" + ctx.Request.Host
+
+	if location != nil && location.Host != "" {
+		body = strings.ReplaceAll(body, location.Scheme+"://"+location.Host, proxyBase)
+		body = strings.ReplaceAll(body, "http://"+location.Host, proxyBase)
+		body = strings.ReplaceAll(body, "https://"+location.Host, proxyBase)
+	}
+
+	for _, u := range c.GetAllProviderURLs() {
+		if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
+			body = strings.ReplaceAll(body, parsed.Scheme+"://"+parsed.Host, proxyBase)
+			body = strings.ReplaceAll(body, "http://"+parsed.Host, proxyBase)
+			body = strings.ReplaceAll(body, "https://"+parsed.Host, proxyBase)
+		}
+	}
+
+	return body
 }

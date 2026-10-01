@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pierre-emmanuelJ/iptv-proxy/pkg/config"
 )
 
 func (c *Config) getM3U(ctx *gin.Context) {

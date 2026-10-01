@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -13,8 +14,15 @@ import (
 )
 
 type relaySubscriber struct {
-	ch   chan []byte
-	done chan struct{}
+	ch        chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *relaySubscriber) close() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+	})
 }
 
 type streamRelay struct {
@@ -23,6 +31,8 @@ type streamRelay struct {
 	oriURL      *url.URL
 	contentType string
 	header      http.Header
+	ready       chan struct{}
+	upstreamErr error
 
 	mu          sync.Mutex
 	subscribers map[*relaySubscriber]bool
@@ -68,6 +78,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 			subscribers: make(map[*relaySubscriber]bool),
 			cancel:      cancel,
 			active:      true,
+			ready:       make(chan struct{}),
 		}
 		h.relays[streamKey] = relay
 		h.mu.Unlock()
@@ -76,6 +87,19 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 		go relay.startUpstream(reqCtx, cfg, client)
 	} else {
 		h.mu.Unlock()
+	}
+
+	// Wait for upstream connection to be established (up to 5 seconds)
+	select {
+	case <-relay.ready:
+	case <-ctx.Request.Context().Done():
+		return true
+	case <-time.After(5 * time.Second):
+		return false
+	}
+
+	if relay.upstreamErr != nil {
+		return false
 	}
 
 	// Register this client as a subscriber
@@ -99,7 +123,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 		remaining := len(relay.subscribers)
 		relay.mu.Unlock()
 
-		close(sub.done)
+		sub.close()
 		log.Printf("[iptv-proxy] Client %s disconnected from %s (Remaining viewers: %d)", ctx.ClientIP(), streamKey, remaining)
 
 		if remaining == 0 {
@@ -157,8 +181,13 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 	}
 
 	resp, err := cfg.forwardStreamRequest(ginCtx, client, r.oriURL, false)
-	if err != nil {
+	if err != nil || (resp != nil && resp.StatusCode >= 400) {
+		if err == nil {
+			err = fmt.Errorf("upstream returned status %d", resp.StatusCode)
+		}
 		log.Printf("[iptv-proxy] Error starting shared relay upstream for %s: %v", r.streamKey, err)
+		r.upstreamErr = err
+		close(r.ready)
 		r.hub.mu.Lock()
 		delete(r.hub.relays, r.streamKey)
 		r.hub.mu.Unlock()
@@ -171,6 +200,7 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 	r.contentType = resp.Header.Get("Content-Type")
 	r.header = resp.Header.Clone()
 	r.mu.Unlock()
+	close(r.ready)
 
 	buf := make([]byte, 128*1024)
 	for {
@@ -211,11 +241,7 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 	r.mu.Lock()
 	r.active = false
 	for sub := range r.subscribers {
-		select {
-		case <-sub.done:
-		default:
-			close(sub.done)
-		}
+		sub.close()
 	}
 	r.mu.Unlock()
 }

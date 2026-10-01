@@ -1143,7 +1143,25 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
 	}
-	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+			return
+		}
+		body := string(b)
+		body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+				if prov.XtreamUser != "" && prov.XtreamPassword != "" {
+					body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+				}
+			}
+		}
+		mergeHttpHeader(ctx.Writer.Header(), resp.Header)
+		ctx.Data(http.StatusOK, resp.Header.Get("Content-Type"), []byte(body))
+		return
+	}
 
 	if resp.StatusCode == http.StatusFound {
 		location, err := resp.Location()

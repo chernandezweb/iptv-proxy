@@ -159,11 +159,10 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	// User-Agent masquerading: use single unified User-Agent for all devices to prevent fingerprinting
 	req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
 
-	targetHost := oriURL.Scheme + "://" + oriURL.Host
-	if c.Referer != "" && strings.Contains(c.Referer, oriURL.Host) {
+	if c.Referer != "" {
 		req.Header.Set("Referer", c.Referer)
 	} else {
-		req.Header.Set("Referer", targetHost)
+		req.Header.Del("Referer")
 	}
 
 	// Anti-IP leak: strip all proxy and client IP headers so provider only sees VPS IP
@@ -426,6 +425,15 @@ func cleanUpstreamHeaders(h http.Header) {
 	h.Del("X-Forwarded-Server")
 	h.Del("Forwarded")
 	h.Del("Via")
+
+	// Strip browser and cross-origin headers to mimic native IPTV apps
+	h.Del("Origin")
+	h.Del("Sec-Fetch-Site")
+	h.Del("Sec-Fetch-Mode")
+	h.Del("Sec-Fetch-Dest")
+	h.Del("Sec-Ch-Ua")
+	h.Del("Sec-Ch-Ua-Mobile")
+	h.Del("Sec-Ch-Ua-Platform")
 
 	// Strip client authentication headers
 	h.Del("Authorization")

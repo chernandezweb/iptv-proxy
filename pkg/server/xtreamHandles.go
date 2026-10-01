@@ -1134,6 +1134,8 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
 	if c.Referer != "" {
 		req.Header.Set("Referer", c.Referer)
+	} else {
+		req.Header.Del("Referer")
 	}
 	cleanUpstreamHeaders(req.Header)
 
@@ -1162,7 +1164,11 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 				bReq.URL.Scheme = parsedB.Scheme
 				bReq.URL.Host = parsedB.Host
 				bReq.Host = parsedB.Host
-				bReq.Header.Set("Referer", bURL)
+				if c.Referer != "" {
+					bReq.Header.Set("Referer", c.Referer)
+				} else {
+					bReq.Header.Del("Referer")
+				}
 
 				bResp, bErr := client.Do(bReq)
 				if bErr == nil && bResp.StatusCode < 400 {

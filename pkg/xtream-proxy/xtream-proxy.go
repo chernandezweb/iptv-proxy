@@ -72,6 +72,12 @@ type login struct {
 
 // Login xtream login
 func (c *Client) login(proxyUser, proxyPassword, proxyURL string, proxyPort int, protocol string) (login, error) {
+	cleanURL := strings.TrimPrefix(proxyURL, "http://")
+	cleanURL = strings.TrimPrefix(cleanURL, "https://")
+	if h, _, err := net.SplitHostPort(cleanURL); err == nil {
+		cleanURL = h
+	}
+
 	req := login{
 		UserInfo: xtream.UserInfo{
 			Username:             proxyUser,
@@ -87,7 +93,7 @@ func (c *Client) login(proxyUser, proxyPassword, proxyURL string, proxyPort int,
 			AllowedOutputFormats: c.UserInfo.AllowedOutputFormats,
 		},
 		ServerInfo: xtream.ServerInfo{
-			URL:          proxyURL,
+			URL:          cleanURL,
 			Port:         xtream.FlexInt(proxyPort),
 			HTTPSPort:    xtream.FlexInt(proxyPort),
 			Protocol:     protocol,
@@ -318,7 +324,7 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		}
 		respBody, err = c.GetEPG(q["stream_id"][0])
 	default:
-		respBody, err = c.login(config.User.String(), config.Password.String(), protocol+"://"+config.HostConfig.Hostname, config.AdvertisedPort, protocol)
+		respBody, err = c.login(config.User.String(), config.Password.String(), config.HostConfig.Hostname, config.AdvertisedPort, protocol)
 	}
 
 	return

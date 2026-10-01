@@ -595,6 +595,167 @@
             opacity: 1;
             transform: translateY(0);
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.78);
+            backdrop-filter: blur(5px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1.5rem;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-container {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            max-width: 680px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.96) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-title {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.35rem;
+            cursor: pointer;
+            padding: 0.25rem;
+            line-height: 1;
+            border-radius: 4px;
+        }
+        .modal-close:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding: 1.25rem 1.5rem;
+            border-top: 1px solid var(--border);
+            background-color: var(--bg-card-subtle);
+            border-bottom-left-radius: var(--radius);
+            border-bottom-right-radius: var(--radius);
+        }
+
+        /* Provider Cards */
+        .provider-cards-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .provider-item-card {
+            background: var(--bg-card-subtle);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .provider-item-card:hover {
+            border-color: rgba(99, 102, 241, 0.45);
+        }
+
+        .provider-item-card.disabled {
+            opacity: 0.6;
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .provider-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .provider-card-title {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .provider-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.85rem;
+            align-items: center;
+        }
+
+        .provider-card-meta code {
+            color: #a5b4fc;
+            background: rgba(99, 102, 241, 0.12);
+            padding: 0.2rem 0.45rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .provider-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .switch-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            user-select: none;
+        }
+
+        .switch-toggle input[type="checkbox"] {
+            width: 1.15rem;
+            height: 1.15rem;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -621,7 +782,7 @@
 
     <div class="tabs">
         <button class="tab active" id="tab-provider" onclick="switchTab('provider')">
-            ⚙️ Provider Settings
+            🌐 Providers (<span class="badge" id="provBadge">0</span>)
         </button>
         <button class="tab" id="tab-live" onclick="switchTab('live')">
             📺 Live TV <span class="badge" id="liveBadge">0</span>
@@ -641,143 +802,142 @@
             <span id="providerAlertMsg">Unable to connect to IPTV provider. Please check your credentials below.</span>
         </div>
         <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.85rem;" onclick="switchTab('provider')">
-            Edit Provider
+            Edit Providers
         </button>
     </div>
 
     <!-- PROVIDER SETTINGS TAB -->
     <div id="providerTab" class="tab-content active">
-        <div style="margin-bottom: 1.5rem;">
-            <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; font-weight: 600;">Xtream Codes Provider &amp; Backup Failover Pool</h2>
-            <p class="subtitle">Configure your primary and backup server URLs. The HTTP Referer header is automatically synced with the active server URL.</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">Xtream Multi-Provider Aggregator (Option 3)</h2>
+                <p class="subtitle">Aggregate multiple IPTV subscriptions into a single playlist and API. Streams are routed to the corresponding provider dynamically.</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary" id="testAllBtn" onclick="testAllProviders()">
+                    ⚡ Test All Providers
+                </button>
+                <button type="button" class="btn" onclick="openProviderModal(-1)">
+                    ➕ Add Provider
+                </button>
+            </div>
         </div>
 
-        <form id="providerForm" onsubmit="event.preventDefault(); saveProvider();">
-            <div class="form-grid">
-                <!-- Unified Provider URL & Referer Input -->
-                <div class="form-group full-width">
-                    <label for="xtreamBaseURL">
-                        <span>Active Provider Server URL &amp; Referer</span>
-                        <span class="label-code">XTREAM_BASE_URL &amp; REFERER</span>
-                    </label>
-                    <div class="input-wrapper">
-                        <input type="text" id="xtreamBaseURL" placeholder="http://cf.stay88best.com" required autocomplete="off">
-                    </div>
-                    <span class="help-text">
-                        The active IPTV provider server. This URL is also automatically used as the <strong>HTTP Referer header</strong> for all upstream requests to prevent anti-proxy / 403 Forbidden blocks.
-                    </span>
-                    <span class="override-link" onclick="toggleRefererOverride()">
-                        ⚙️ Advanced: Specify different custom Referer header override
-                    </span>
-                    <div id="customRefererWrapper" style="display: none; margin-top: 0.5rem;">
-                        <input type="text" id="referer" placeholder="Leave blank to automatically match Active URL" autocomplete="off">
-                        <span class="help-text">Optional: Only fill this if your provider requires a referer domain different from the server URL.</span>
-                    </div>
-                </div>
-
-                <!-- Backup URLs Pool -->
-                <div class="form-group full-width">
-                    <label for="backupURLs">
-                        <span>Backup / Fallback Server URLs (Auto-Failover Pool)</span>
-                        <span class="label-code">AUTO-FAILOVER POOL</span>
-                    </label>
-                    <textarea id="backupURLs" placeholder="http://line2.stay88best.com&#10;http://backup.stay88best.com" rows="3"></textarea>
-                    <span class="help-text">
-                        Enter backup URLs (one per line). If the active provider server drops down or times out, the proxy will <strong>automatically test, rotate, and failover</strong> to an available backup URL.
-                    </span>
-                </div>
-
-                <!-- Credentials -->
-                <div class="form-group">
-                    <label for="xtreamUser">
-                        <span>Provider Username</span>
-                        <span class="label-code">XTREAM_USER</span>
-                    </label>
-                    <div class="input-wrapper">
-                        <input type="text" id="xtreamUser" placeholder="Provider username" required autocomplete="off">
-                    </div>
-                    <span class="help-text">Your IPTV provider account username</span>
-                </div>
-
-                <div class="form-group">
-                    <label for="xtreamPassword">
-                        <span>Provider Password</span>
-                        <span class="label-code">XTREAM_PASSWORD</span>
-                    </label>
-                    <div class="input-wrapper">
-                        <input type="password" id="xtreamPassword" placeholder="Provider password" required autocomplete="off">
-                        <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('xtreamPassword')" title="Show/Hide Password">👁️</button>
-                    </div>
-                    <span class="help-text">Your IPTV provider account password</span>
-                </div>
-
-                <!-- User-Agent Masquerade -->
-                <div class="form-group full-width">
-                    <label for="userAgent">
-                        <span>Upstream User-Agent Masquerade</span>
-                        <span class="label-code">USER_AGENT</span>
-                    </label>
-                    <div class="input-wrapper">
-                        <input type="text" id="userAgent" placeholder="IPTVSmartersPro (Default)" autocomplete="off">
-                    </div>
-                    <span class="help-text">
-                        All 12+ devices across different networks are disguised under this single User-Agent to prevent provider bans triggered by mixed player fingerprints.
-                    </span>
-                    <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('smarters')">📱 IPTV Smarters (Default)</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('tivimate')">📺 TiviMate</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('chrome')">🌐 Chrome</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="setUAPreset('vlc')">🎬 VLC</button>
-                    </div>
-                </div>
-
-                <!-- Active Protections Summary Card -->
-                <div class="form-group full-width">
-                    <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-top: 0.5rem;">
-                        <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
-                            🛡️ High-Concurrency &amp; Anti-Blocking Engine Active (12+ Devices)
-                        </h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
-                            <div>🔒 <strong>IP Leak Shield:</strong> Strips <code>X-Forwarded-For</code> &amp; client IP headers. Provider only sees VPS IP.</div>
-                            <div>🔄 <strong>Shared Stream Relay:</strong> Multiple devices watching the same live channel share 1 upstream connection.</div>
-                            <div>⚡ <strong>HLS RAM Cache:</strong> In-memory chunk cache eliminates duplicate segment downloads across devices.</div>
-                            <div>🚀 <strong>Connection Pooling:</strong> Tuned 128-conn Keep-Alive pool with zero-allocation 128KB buffers.</div>
-                        </div>
-                    </div>
-                </div>
+        <!-- Providers List Container -->
+        <div id="providersListContainer" class="provider-cards-grid">
+            <div class="loading-state">
+                <span class="spinner"></span> Loading IPTV providers...
             </div>
+        </div>
 
-            <div class="form-actions">
-                <button type="button" class="btn btn-rotate" id="rotateBtn" onclick="rotateURL()" title="Manually rotate to the next backup URL">
-                    🔄 Rotate to Next URL
-                </button>
-                <button type="button" class="btn btn-test" id="testBtn" onclick="testConnection()">
-                    🧪 Test All URLs
-                </button>
-                <button type="submit" class="btn" id="saveProviderBtn">
-                    💾 Save Provider Settings
-                </button>
+        <!-- Active Protections Summary Card -->
+        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-bottom: 1.5rem;">
+            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
+                🛡️ High-Concurrency &amp; Anti-Blocking Engine Active (12+ Devices)
+            </h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
+                <div>🔒 <strong>IP Leak Shield:</strong> Strips <code>X-Forwarded-For</code> &amp; client IP headers. Upstream providers only see VPS IP.</div>
+                <div>🔄 <strong>Shared Stream Relay:</strong> Multiple devices watching the same live channel share 1 upstream connection.</div>
+                <div>⚡ <strong>HLS RAM Cache:</strong> In-memory chunk cache eliminates duplicate segment downloads across devices.</div>
+                <div>🚀 <strong>Connection Pooling:</strong> Tuned 128-conn Keep-Alive pool with zero-allocation 128KB buffers.</div>
             </div>
-        </form>
+        </div>
 
-        <!-- Multi-URL Health Results Card -->
-        <div id="testResultCard" class="pool-card" style="display: none;">
+        <!-- Detailed URL Health Results Card -->
+        <div id="testResultCard" class="pool-card" style="display: none; margin-bottom: 1.5rem;">
             <h3>
-                <span>📊 Server URLs Health &amp; Failover Status</span>
+                <span>📊 Server URLs Detailed Health &amp; Failover Status</span>
                 <span id="testSummaryBadge" class="status-badge online" style="font-size: 0.75rem;">Tested</span>
             </h3>
             <table class="url-list-table">
                 <thead>
                     <tr>
-                        <th>Server URL</th>
+                        <th>Provider &amp; URL</th>
                         <th>Status</th>
                         <th>Latency</th>
-                        <th>Categories / Details</th>
-                        <th>Action</th>
+                        <th>Account Details &amp; Categories</th>
                     </tr>
                 </thead>
                 <tbody id="urlTableBody"></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- ADD / EDIT PROVIDER MODAL -->
+    <div id="providerModal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Add IPTV Provider</h3>
+                <button type="button" class="modal-close" onclick="closeProviderModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="modalProviderForm" onsubmit="event.preventDefault(); saveProviderFromModal();">
+                    <input type="hidden" id="modalProvIndex" value="-1">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="modalProvName">Provider Name / Label</label>
+                            <input type="text" id="modalProvName" placeholder="e.g. Likane CC or Stay88" required autocomplete="off">
+                        </div>
+                        <div class="form-group" style="display:flex; align-items:flex-end;">
+                            <label class="switch-toggle" style="margin-bottom:0.75rem;">
+                                <input type="checkbox" id="modalProvEnabled" checked>
+                                <span>Enable Provider in Unified Playlist</span>
+                            </label>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="modalBaseURL">
+                                <span>Primary Server URL &amp; Referer</span>
+                                <span class="label-code">XTREAM_BASE_URL</span>
+                            </label>
+                            <input type="text" id="modalBaseURL" placeholder="http://ewtns.likane.cc" required autocomplete="off">
+                            <span class="help-text">This URL is also automatically used as the <strong>HTTP Referer header</strong> to prevent anti-proxy / 403 Forbidden blocks.</span>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="modalBackupURLs">
+                                <span>Backup / Fallback Server URLs (Auto-Failover Pool)</span>
+                                <span class="label-code">FAILOVER POOL</span>
+                            </label>
+                            <textarea id="modalBackupURLs" placeholder="http://backup1.domain.cc&#10;http://backup2.domain.cc" rows="2"></textarea>
+                            <span class="help-text">Enter backup URLs (one per line). If primary fails, proxy automatically fails over to available backups.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalUser">Username</label>
+                            <input type="text" id="modalUser" placeholder="Provider username" required autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPassword">Password</label>
+                            <div class="input-wrapper">
+                                <input type="password" id="modalPassword" placeholder="Provider password" required autocomplete="off">
+                                <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('modalPassword')">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <span class="override-link" onclick="toggleModalRefererOverride()">
+                                ⚙️ Advanced: Specify custom Referer override
+                            </span>
+                            <div id="modalCustomRefererWrapper" style="display:none; margin-top:0.4rem;">
+                                <input type="text" id="modalReferer" placeholder="Leave blank to automatically match Server URL" autocomplete="off">
+                                <span class="help-text">Optional: Only fill if your provider requires a referer domain different from the server URL.</span>
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="modalUA">Upstream User-Agent Masquerade</label>
+                            <input type="text" id="modalUA" placeholder="IPTVSmartersPro (Default)" autocomplete="off">
+                            <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setModalUAPreset('smarters')">📱 IPTV Smarters</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setModalUAPreset('tivimate')">📺 TiviMate</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setModalUAPreset('chrome')">🌐 Chrome</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setModalUAPreset('vlc')">🎬 VLC</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeProviderModal()">Cancel</button>
+                <button type="button" class="btn btn-test" id="modalTestBtn" onclick="testModalProvider()">🧪 Test Connection</button>
+                <button type="button" class="btn" onclick="saveProviderFromModal()">💾 Save Provider</button>
+            </div>
         </div>
     </div>
 
@@ -837,10 +997,11 @@
 
 <script>
     let state = {
+        providers: [],
         live: [], vod: [], series: [],
         filters: { allowed_live_categories: [], allowed_vod_categories: [], allowed_series_categories: [] },
-        provider: { xtream_base_url: '', backup_urls: [], xtream_user: '', xtream_password: '', referer: '' },
-        currentTab: 'provider'
+        currentTab: 'provider',
+        testResults: {}
     };
 
     function switchTab(type) {
@@ -866,20 +1027,13 @@
         input.type = input.type === 'password' ? 'text' : 'password';
     }
 
-    function toggleRefererOverride() {
-        const wrap = document.getElementById('customRefererWrapper');
+    function toggleModalRefererOverride() {
+        const wrap = document.getElementById('modalCustomRefererWrapper');
         wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
     }
 
-    function getBackupURLsFromText() {
-        const raw = document.getElementById('backupURLs').value;
-        return raw.split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0);
-    }
-
-    function setUAPreset(type) {
-        const input = document.getElementById('userAgent');
+    function setModalUAPreset(type) {
+        const input = document.getElementById('modalUA');
         switch (type) {
             case 'smarters':
                 input.value = 'IPTVSmartersPro';
@@ -896,108 +1050,289 @@
         }
     }
 
-    async function loadProvider() {
+    async function loadProviders() {
         try {
-            const res = await fetch('/admin/api/provider');
-            if (!res.ok) throw new Error('Failed to load provider settings');
+            const res = await fetch('/admin/api/providers');
+            if (!res.ok) throw new Error('Failed to load providers');
             const data = await res.json();
-            state.provider = data;
-
-            document.getElementById('xtreamBaseURL').value = data.xtream_base_url || '';
-            document.getElementById('xtreamUser').value = data.xtream_user || '';
-            document.getElementById('xtreamPassword').value = data.xtream_password || '';
-            document.getElementById('userAgent').value = data.user_agent || '';
-
-            const backups = data.backup_urls || [];
-            document.getElementById('backupURLs').value = backups.join('\n');
-
-            if (data.referer && data.referer !== data.xtream_base_url) {
-                document.getElementById('referer').value = data.referer;
-                document.getElementById('customRefererWrapper').style.display = 'block';
-            } else {
-                document.getElementById('referer').value = '';
-            }
+            state.providers = data.providers || [];
+            renderProviders();
+            document.getElementById('provBadge').innerText = state.providers.length;
         } catch (e) {
-            console.error('Error loading provider settings:', e);
+            console.error('Error loading providers:', e);
+            document.getElementById('providersListContainer').innerHTML = `
+                <div style="padding:2rem; text-align:center; color:var(--danger);">
+                    Failed to load providers: ${escapeHtml(e.message)}
+                </div>
+            `;
         }
     }
 
-    async function testConnection() {
-        const btn = document.getElementById('testBtn');
-        const oldText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Testing URLs...';
+    function renderProviders() {
+        const container = document.getElementById('providersListContainer');
+        if (!state.providers || state.providers.length === 0) {
+            container.innerHTML = `
+                <div style="padding:3rem 1.5rem; text-align:center; background:var(--bg-card-subtle); border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted);">
+                    <div style="font-size:2rem; margin-bottom:0.75rem;">🌐</div>
+                    <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">No IPTV Providers Configured</div>
+                    <p style="margin:0 0 1.25rem 0; font-size:0.9rem;">Add your primary and secondary IPTV subscriptions to aggregate them into a single playlist.</p>
+                    <button type="button" class="btn" onclick="openProviderModal(-1)">➕ Add Your First Provider</button>
+                </div>
+            `;
+            return;
+        }
 
-        const activeURL = document.getElementById('xtreamBaseURL').value.trim();
-        const payload = {
-            xtream_base_url: activeURL,
-            backup_urls: getBackupURLsFromText(),
-            xtream_user: document.getElementById('xtreamUser').value.trim(),
-            xtream_password: document.getElementById('xtreamPassword').value.trim(),
-            referer: document.getElementById('referer').value.trim(),
-            user_agent: document.getElementById('userAgent').value.trim()
+        let html = '';
+        state.providers.forEach((prov, idx) => {
+            const isEnabled = prov.enabled !== false;
+            const backupCount = (prov.backup_urls || []).length;
+            const testInfo = state.testResults[prov.id || idx];
+
+            let statusBadge = '<span class="status-badge" style="color:var(--text-muted); border-color:var(--border);">Untested</span>';
+            if (testInfo) {
+                if (testInfo.online) {
+                    statusBadge = `<span class="status-badge online"><span class="status-dot"></span> Online (${testInfo.latency}ms, ${testInfo.categories} cats)</span>`;
+                } else {
+                    statusBadge = `<span class="status-badge error"><span class="status-dot"></span> Offline</span>`;
+                }
+            }
+
+            html += `
+                <div class="provider-item-card ${!isEnabled ? 'disabled' : ''}">
+                    <div class="provider-card-top">
+                        <div class="provider-card-title">
+                            <span>📡 ${escapeHtml(prov.name || 'Provider ' + (idx + 1))}</span>
+                            ${statusBadge}
+                        </div>
+                        <div style="display:flex; align-items:center; gap:1rem;">
+                            <label class="switch-toggle" title="Toggle to enable/disable this provider from the aggregated playlist">
+                                <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleProviderEnabled(${idx})">
+                                <span>${isEnabled ? 'Active in Pool' : 'Disabled'}</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="provider-card-meta">
+                        <div>Server: <code>${escapeHtml(prov.xtream_base_url || 'Not configured')}</code></div>
+                        <div>User: <code>${escapeHtml(prov.xtream_user || '-')}</code></div>
+                        <div>Failover Pool: <span>${backupCount > 0 ? backupCount + ' backup server(s)' : 'No backups'}</span></div>
+                        <div>UA: <span>${escapeHtml(prov.user_agent || 'IPTVSmartersPro')}</span></div>
+                    </div>
+                    <div class="provider-card-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" id="testProvBtn-${idx}" onclick="testSingleProvider(${idx})">
+                            🧪 Test Server
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openProviderModal(${idx})">
+                            ✏️ Edit
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger); border-color:rgba(239,68,68,0.3);" onclick="deleteProvider(${idx})">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+        document.getElementById('provBadge').innerText = state.providers.length;
+    }
+
+    function openProviderModal(idx) {
+        document.getElementById('modalProvIndex').value = idx;
+        const modal = document.getElementById('providerModal');
+        const title = document.getElementById('modalTitle');
+
+        if (idx >= 0 && state.providers[idx]) {
+            const p = state.providers[idx];
+            title.innerText = `Edit Provider: ${p.name || 'Provider ' + (idx + 1)}`;
+            document.getElementById('modalProvName').value = p.name || '';
+            document.getElementById('modalProvEnabled').checked = p.enabled !== false;
+            document.getElementById('modalBaseURL').value = p.xtream_base_url || '';
+            document.getElementById('modalBackupURLs').value = (p.backup_urls || []).join('\n');
+            document.getElementById('modalUser').value = p.xtream_user || '';
+            document.getElementById('modalPassword').value = p.xtream_password || '';
+            document.getElementById('modalUA').value = p.user_agent || 'IPTVSmartersPro';
+
+            if (p.referer && p.referer !== p.xtream_base_url) {
+                document.getElementById('modalReferer').value = p.referer;
+                document.getElementById('modalCustomRefererWrapper').style.display = 'block';
+            } else {
+                document.getElementById('modalReferer').value = '';
+                document.getElementById('modalCustomRefererWrapper').style.display = 'none';
+            }
+        } else {
+            title.innerText = 'Add New IPTV Provider';
+            document.getElementById('modalProvName').value = `Provider ${state.providers.length + 1}`;
+            document.getElementById('modalProvEnabled').checked = true;
+            document.getElementById('modalBaseURL').value = '';
+            document.getElementById('modalBackupURLs').value = '';
+            document.getElementById('modalUser').value = '';
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalUA').value = 'IPTVSmartersPro';
+            document.getElementById('modalReferer').value = '';
+            document.getElementById('modalCustomRefererWrapper').style.display = 'none';
+        }
+
+        modal.classList.add('open');
+    }
+
+    function closeProviderModal() {
+        document.getElementById('providerModal').classList.remove('open');
+    }
+
+    async function saveProviderFromModal() {
+        const idx = parseInt(document.getElementById('modalProvIndex').value, 10);
+        const name = document.getElementById('modalProvName').value.trim() || `Provider ${state.providers.length + 1}`;
+        const baseURL = document.getElementById('modalBaseURL').value.trim();
+        const user = document.getElementById('modalUser').value.trim();
+        const pass = document.getElementById('modalPassword').value.trim();
+        const ua = document.getElementById('modalUA').value.trim() || 'IPTVSmartersPro';
+        const referer = document.getElementById('modalReferer').value.trim();
+        const enabled = document.getElementById('modalProvEnabled').checked;
+
+        const rawBackups = document.getElementById('modalBackupURLs').value;
+        const backupURLs = rawBackups.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+        if (!baseURL || !user || !pass) {
+            showToast('Please fill in Provider Server URL, Username, and Password', 'warning');
+            return;
+        }
+
+        const newProv = {
+            id: (idx >= 0 && state.providers[idx] && state.providers[idx].id) ? state.providers[idx].id : `provider_${Date.now()}`,
+            name: name,
+            enabled: enabled,
+            xtream_base_url: baseURL,
+            backup_urls: backupURLs,
+            xtream_user: user,
+            xtream_password: pass,
+            referer: referer || baseURL,
+            user_agent: ua
         };
 
-        const resultCard = document.getElementById('testResultCard');
-        const tableBody = document.getElementById('urlTableBody');
+        if (idx >= 0 && idx < state.providers.length) {
+            state.providers[idx] = newProv;
+        } else {
+            state.providers.push(newProv);
+        }
 
-        resultCard.style.display = 'block';
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted);"><span class="spinner"></span> Testing all provider URLs with current credentials...</td></tr>`;
+        closeProviderModal();
+        await saveAllProviders();
+    }
 
+    async function toggleProviderEnabled(idx) {
+        if (state.providers[idx]) {
+            state.providers[idx].enabled = !state.providers[idx].enabled;
+            renderProviders();
+            await saveAllProviders();
+        }
+    }
+
+    async function deleteProvider(idx) {
+        if (!confirm(`Are you sure you want to remove "${state.providers[idx].name || 'this provider'}"?`)) {
+            return;
+        }
+        state.providers.splice(idx, 1);
+        renderProviders();
+        await saveAllProviders();
+    }
+
+    async function saveAllProviders() {
         try {
-            const res = await fetch('/admin/api/provider/test', {
+            const res = await fetch('/admin/api/providers', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ providers: state.providers })
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
+            showToast(data.message || 'Providers saved and synced successfully!', 'success');
+            await loadProviders();
+            await loadCategories();
+        } catch (e) {
+            showToast('Error saving providers: ' + e.message, 'error');
+        }
+    }
 
-            if (data.results && data.results.length > 0) {
-                resultCard.style.display = 'block';
-                let html = '';
+    async function testSingleProvider(idx) {
+        const btn = document.getElementById(`testProvBtn-${idx}`);
+        const oldText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;"></span> Testing...';
+        }
 
-                data.results.forEach(item => {
-                    const isActive = (item.url === activeURL);
-                    const statusClass = item.online ? 'online' : 'offline';
-                    const statusText = item.online ? 'Online' : 'Offline';
+        const prov = state.providers[idx];
+        try {
+            const res = await fetch('/admin/api/providers/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providers: [prov] })
+            });
+            const data = await res.json();
+            if (data.providers && data.providers.length > 0) {
+                const pRes = data.providers[0];
+                const primary = (pRes.results && pRes.results.length > 0) ? pRes.results[0] : null;
+                state.testResults[prov.id || idx] = {
+                    online: pRes.online,
+                    latency: primary ? primary.latency_ms : 0,
+                    categories: primary ? primary.categories_count : 0
+                };
+                renderProviders();
+                renderTestBreakdown(data.providers);
 
-                    html += `
-                        <tr>
-                            <td>
-                                <strong>${escapeHtml(item.url)}</strong>
-                                ${isActive ? '<span class="url-pill active" style="margin-left:6px;">Active</span>' : ''}
-                            </td>
-                            <td>
-                                <span class="url-pill ${statusClass}">${statusText}</span>
-                            </td>
-                            <td>${item.latency_ms > 0 ? item.latency_ms + ' ms' : '-'}</td>
-                            <td>${escapeHtml(item.message || '')}</td>
-                            <td>
-                                ${!isActive && item.online ? `
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="makeActive('${escapeHtml(item.url)}')">
-                                        Make Active
-                                    </button>
-                                ` : (isActive ? '<span style="color:var(--text-muted);font-size:0.8rem;">Current Active</span>' : '-')}
-                            </td>
-                        </tr>
-                    `;
-                });
-                tableBody.innerHTML = html;
-
-                if (data.success) {
-                    showToast('Server URLs tested successfully!', 'success');
-                    updateStatusBadge('online', 'Connected');
-                    document.getElementById('providerAlert').style.display = 'none';
+                if (pRes.online) {
+                    showToast(`Provider "${prov.name}" is Online! (${primary.categories_count} live categories)`, 'success');
                 } else {
-                    showToast('All tested URLs failed to connect', 'error');
-                    updateStatusBadge('error', 'Connection Failed');
+                    showToast(`Provider "${prov.name}" connection failed`, 'error');
                 }
-            } else {
-                showToast(data.error || 'Test failed', 'error');
             }
         } catch (e) {
-            tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--danger);">Failed to test URLs: ${escapeHtml(e.message)}</td></tr>`;
+            showToast('Test failed: ' + e.message, 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = oldText;
+            }
+        }
+    }
+
+    async function testModalProvider() {
+        const btn = document.getElementById('modalTestBtn');
+        const oldText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;"></span> Testing...';
+
+        const rawBackups = document.getElementById('modalBackupURLs').value;
+        const backupURLs = rawBackups.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const tempProv = {
+            id: 'temp_test',
+            name: document.getElementById('modalProvName').value.trim() || 'Test Provider',
+            enabled: true,
+            xtream_base_url: document.getElementById('modalBaseURL').value.trim(),
+            backup_urls: backupURLs,
+            xtream_user: document.getElementById('modalUser').value.trim(),
+            xtream_password: document.getElementById('modalPassword').value.trim(),
+            referer: document.getElementById('modalReferer').value.trim(),
+            user_agent: document.getElementById('modalUA').value.trim() || 'IPTVSmartersPro'
+        };
+
+        try {
+            const res = await fetch('/admin/api/providers/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providers: [tempProv] })
+            });
+            const data = await res.json();
+            if (data.providers && data.providers.length > 0) {
+                const r = data.providers[0];
+                const primary = (r.results && r.results.length > 0) ? r.results[0] : null;
+                if (r.online && primary) {
+                    showToast(`Online! Latency: ${primary.latency_ms}ms, ${primary.categories_count} live categories`, 'success');
+                } else {
+                    showToast(`Connection failed: ${primary ? primary.message : 'Unknown error'}`, 'error');
+                }
+            }
+        } catch (e) {
             showToast('Test request failed: ' + e.message, 'error');
         } finally {
             btn.disabled = false;
@@ -1005,75 +1340,81 @@
         }
     }
 
-    async function makeActive(url) {
-        document.getElementById('xtreamBaseURL').value = url;
-        // remove this url from backup textarea and add old active
-        await saveProvider();
-    }
-
-    async function rotateURL() {
-        const btn = document.getElementById('rotateBtn');
+    async function testAllProviders() {
+        const btn = document.getElementById('testAllBtn');
         const oldText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Rotating...';
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Testing All...';
 
         try {
-            const res = await fetch('/admin/api/provider/rotate', {
+            const res = await fetch('/admin/api/providers/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
+                body: JSON.stringify({ providers: state.providers })
             });
             const data = await res.json();
+            if (data.providers) {
+                data.providers.forEach(pRes => {
+                    const primary = (pRes.results && pRes.results.length > 0) ? pRes.results[0] : null;
+                    state.testResults[pRes.id] = {
+                        online: pRes.online,
+                        latency: primary ? primary.latency_ms : 0,
+                        categories: primary ? primary.categories_count : 0
+                    };
+                });
+                renderProviders();
+                renderTestBreakdown(data.providers);
 
-            if (data.status === 'success') {
-                showToast(data.message || 'Rotated provider URL!', 'success');
-                await loadProvider();
-                await loadCategories();
-            } else {
-                showToast(data.message || 'Rotation warning', 'warning');
+                const onlineCount = data.providers.filter(p => p.online).length;
+                if (onlineCount > 0) {
+                    showToast(`${onlineCount} of ${data.providers.length} providers are online!`, 'success');
+                    updateStatusBadge('online', `${onlineCount}/${data.providers.length} Online`);
+                } else {
+                    showToast('All configured providers failed to connect', 'error');
+                    updateStatusBadge('error', 'All Offline');
+                }
             }
         } catch (e) {
-            showToast('Rotation failed: ' + e.message, 'error');
+            showToast('Error testing providers: ' + e.message, 'error');
         } finally {
             btn.disabled = false;
             btn.innerHTML = oldText;
         }
     }
 
-    async function saveProvider() {
-        const btn = document.getElementById('saveProviderBtn');
-        const oldText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Saving...';
+    function renderTestBreakdown(providersResults) {
+        const card = document.getElementById('testResultCard');
+        const tbody = document.getElementById('urlTableBody');
+        card.style.display = 'block';
 
-        const activeURL = document.getElementById('xtreamBaseURL').value.trim();
-        const payload = {
-            xtream_base_url: activeURL,
-            backup_urls: getBackupURLsFromText(),
-            xtream_user: document.getElementById('xtreamUser').value.trim(),
-            xtream_password: document.getElementById('xtreamPassword').value.trim(),
-            referer: document.getElementById('referer').value.trim(),
-            user_agent: document.getElementById('userAgent').value.trim()
-        };
+        let html = '';
+        providersResults.forEach(p => {
+            (p.results || []).forEach((uRes, uIdx) => {
+                const isPrimary = (uIdx === 0);
+                const statusClass = uRes.online ? 'online' : 'offline';
+                const statusText = uRes.online ? 'Online' : 'Offline';
 
-        try {
-            const res = await fetch('/admin/api/provider', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                html += `
+                    <tr>
+                        <td>
+                            <strong>${escapeHtml(p.name)}</strong><br>
+                            <span style="font-family:monospace; font-size:0.8rem; color:#cbd5e1;">${escapeHtml(uRes.url)}</span>
+                            ${isPrimary ? '<span class="url-pill active" style="margin-left:6px;">Primary</span>' : '<span class="url-pill" style="margin-left:6px; background:rgba(255,255,255,0.05);">Backup</span>'}
+                        </td>
+                        <td>
+                            <span class="url-pill ${statusClass}">${statusText}</span>
+                        </td>
+                        <td>${uRes.latency_ms > 0 ? uRes.latency_ms + ' ms' : '-'}</td>
+                        <td>
+                            <div>${escapeHtml(uRes.message || '')}</div>
+                            ${uRes.status ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">Status: <strong>${escapeHtml(uRes.status)}</strong> | Exp: <strong>${escapeHtml(uRes.exp_date || 'N/A')}</strong> | Max Conn: <strong>${escapeHtml(uRes.max_connections || '1')}</strong></div>` : ''}
+                        </td>
+                    </tr>
+                `;
             });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
+        });
 
-            showToast(data.message || 'Provider & Backup URLs saved successfully!', 'success');
-            await loadProvider();
-            await loadCategories();
-        } catch (e) {
-            showToast('Failed to save provider settings: ' + e.message, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = oldText;
-        }
+        tbody.innerHTML = html;
     }
 
     async function loadCategories() {
@@ -1085,15 +1426,10 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            if (data.active_url) {
-                document.getElementById('xtreamBaseURL').value = data.active_url;
-            }
-
-            if (data.error || data.warning) {
-                const msg = data.error || data.warning;
+            if (data.warning || (data.warnings && data.warnings.length > 0)) {
+                const msg = data.warning || data.warnings.join('; ');
                 document.getElementById('providerAlertMsg').innerText = msg;
                 document.getElementById('providerAlert').style.display = 'flex';
-                updateStatusBadge('error', 'Provider Error');
             } else {
                 document.getElementById('providerAlert').style.display = 'none';
                 updateStatusBadge('online', 'Connected');
@@ -1135,7 +1471,16 @@
         const key = `allowed_${type}_categories`;
         const filters = state.filters[key] || [];
         if (filters.length === 0) return true;
-        return filters.some(f => name.toUpperCase().startsWith(f.toUpperCase()));
+        const nameUpper = name.toUpperCase();
+        for (const f of filters) {
+            const fUpper = f.toUpperCase();
+            if (nameUpper.startsWith(fUpper) || nameUpper === fUpper) return true;
+            if (nameUpper.startsWith('[') && nameUpper.includes(']')) {
+                const stripped = nameUpper.substring(nameUpper.indexOf(']') + 1).trim();
+                if (stripped.startsWith(fUpper) || stripped === fUpper) return true;
+            }
+        }
+        return false;
     }
 
     function renderList(type) {
@@ -1255,13 +1600,13 @@
     }
 
     async function reloadAll() {
-        await loadProvider();
+        await loadProviders();
         await loadCategories();
     }
 
     // Initialize on page load
     (async function init() {
-        await loadProvider();
+        await loadProviders();
         await loadCategories();
     })();
 </script>

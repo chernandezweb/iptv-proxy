@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,9 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	// API endpoints
 	admin.GET("/api/categories", c.adminGetCategories)
 	admin.POST("/api/filters", c.adminSaveFilters)
+	admin.GET("/api/providers", c.adminGetProviders)
+	admin.POST("/api/providers", c.adminSaveProviders)
+	admin.POST("/api/providers/test", c.adminTestProviders)
 	admin.GET("/api/provider", c.adminGetProvider)
 	admin.POST("/api/provider", c.adminSaveProvider)
 	admin.POST("/api/provider/test", c.adminTestProvider)
@@ -41,59 +45,285 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 	filtersData := c.ProxyConfig.Filters.Data
 	c.ProxyConfig.Filters.RUnlock()
 
-	if c.XtreamBaseURL == "" || c.XtreamUser.String() == "" {
+	enabled := c.GetEnabledProvidersOrFallback()
+	if len(enabled) == 0 {
 		ctx.JSON(http.StatusOK, gin.H{
 			"live":       []interface{}{},
 			"vod":        []interface{}{},
 			"series":     []interface{}{},
 			"filters":    filtersData,
-			"active_url": c.XtreamBaseURL,
-			"warning":    "Provider settings are not configured. Please configure them in the Provider Settings tab.",
+			"warning":    "No IPTV providers configured.",
 		})
 		return
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
+	type CatItem struct {
+		ID   string `json:"category_id"`
+		Name string `json:"category_name"`
+	}
 
-	// If active URL fails, attempt auto-failover across backup URLs
-	if err != nil {
-		allURLs := c.GetAllProviderURLs()
-		for _, bURL := range allURLs {
-			if bURL == c.XtreamBaseURL {
-				continue
+	var allLive []CatItem
+	var allVod []CatItem
+	var allSeries []CatItem
+	var warnings []string
+
+	for provIdx, prov := range enabled {
+		client, err := getClientForProvider(prov)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s: %v", prov.Name, err))
+			continue
+		}
+
+		prefix := ""
+		if len(enabled) > 1 {
+			prefix = fmt.Sprintf("[%s] ", prov.Name)
+		}
+
+		if live, err := client.GetLiveCategories(); err == nil {
+			for _, cat := range live {
+				catID := fmt.Sprint(cat.ID)
+				if provIdx > 0 {
+					if num, errP := strconv.Atoi(catID); errP == nil {
+						catID = strconv.Itoa((provIdx * 100000) + num)
+					}
+				}
+				allLive = append(allLive, CatItem{
+					ID:   catID,
+					Name: prefix + cat.Name,
+				})
 			}
-			bClient, bErr := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), bURL, c.GetUpstreamUserAgent(), bURL)
-			if bErr == nil {
-				c.RotateToURL(bURL)
-				client = bClient
-				err = nil
-				break
+		}
+
+		if vod, err := client.GetVideoOnDemandCategories(); err == nil {
+			for _, cat := range vod {
+				catID := fmt.Sprint(cat.ID)
+				if provIdx > 0 {
+					if num, errP := strconv.Atoi(catID); errP == nil {
+						catID = strconv.Itoa((provIdx * 100000) + num)
+					}
+				}
+				allVod = append(allVod, CatItem{
+					ID:   catID,
+					Name: prefix + cat.Name,
+				})
+			}
+		}
+
+		if series, err := client.GetSeriesCategories(); err == nil {
+			for _, cat := range series {
+				catID := fmt.Sprint(cat.ID)
+				if provIdx > 0 {
+					if num, errP := strconv.Atoi(catID); errP == nil {
+						catID = strconv.Itoa((provIdx * 100000) + num)
+					}
+				}
+				allSeries = append(allSeries, CatItem{
+					ID:   catID,
+					Name: prefix + cat.Name,
+				})
 			}
 		}
 	}
 
-	if err != nil {
-		ctx.JSON(http.StatusOK, gin.H{
-			"live":       []interface{}{},
-			"vod":        []interface{}{},
-			"series":     []interface{}{},
-			"filters":    filtersData,
-			"active_url": c.XtreamBaseURL,
-			"error":      err.Error(),
-		})
+	res := gin.H{
+		"live":       allLive,
+		"vod":        allVod,
+		"series":     allSeries,
+		"filters":    filtersData,
+		"active_url": c.XtreamBaseURL,
+	}
+	if len(warnings) > 0 {
+		res["warnings"] = warnings
+	}
+
+	ctx.JSON(http.StatusOK, res)
+}
+
+func (c *Config) adminGetProviders(ctx *gin.Context) {
+	provs := c.ProxyConfig.Provider.GetProviders()
+	if len(provs) == 0 {
+		provs = c.GetEnabledProvidersOrFallback()
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"providers": provs,
+	})
+}
+
+func (c *Config) adminSaveProviders(ctx *gin.Context) {
+	var payload struct {
+		Providers []config.ProviderItem `json:"providers"`
+	}
+	if err := ctx.BindJSON(&payload); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid json payload: " + err.Error()})
 		return
 	}
 
-	live, _ := client.GetLiveCategories()
-	vod, _ := client.GetVideoOnDemandCategories()
-	series, _ := client.GetSeriesCategories()
+	data := c.ProxyConfig.Provider.GetData()
+	data.Providers = payload.Providers
+	if err := c.ProxyConfig.Provider.Save(data); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Sync top-level active provider settings
+	data = c.ProxyConfig.Provider.GetData()
+	c.ProxyConfig.XtreamBaseURL = data.XtreamBaseURL
+	c.ProxyConfig.BackupURLs = data.BackupURLs
+	c.ProxyConfig.XtreamUser = config.CredentialString(data.XtreamUser)
+	c.ProxyConfig.XtreamPassword = config.CredentialString(data.XtreamPassword)
+	c.ProxyConfig.Referer = data.Referer
+	c.ProxyConfig.UserAgent = data.UserAgent
+
+	if data.XtreamBaseURL != "" {
+		if u, err := url.Parse(data.XtreamBaseURL); err == nil {
+			c.baseStreamURL = u
+		}
+	}
+
+	// Clear caches
+	if c.metadataCache != nil {
+		c.metadataCache.Clear()
+	}
+	if c.xmltvCache != nil {
+		c.xmltvCache.Clear()
+	}
+	xtreamM3uCacheLock.Lock()
+	xtreamM3uCache = make(map[string]cacheMeta)
+	xtreamM3uCacheLock.Unlock()
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"live":       live,
-		"vod":        vod,
-		"series":     series,
-		"filters":    filtersData,
-		"active_url": c.XtreamBaseURL,
+		"status":    "success",
+		"message":   "Providers saved and synced successfully",
+		"providers": data.Providers,
+	})
+}
+
+type providerSummaryResult struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Online    bool            `json:"online"`
+	Results   []urlTestResult `json:"results"`
+}
+
+func (c *Config) adminTestProviders(ctx *gin.Context) {
+	var payload struct {
+		Providers []config.ProviderItem `json:"providers"`
+	}
+	_ = ctx.BindJSON(&payload)
+
+	providersToTest := payload.Providers
+	if len(providersToTest) == 0 {
+		providersToTest = c.ProxyConfig.Provider.GetProviders()
+	}
+	if len(providersToTest) == 0 {
+		providersToTest = c.GetEnabledProvidersOrFallback()
+	}
+
+	summaries := make([]providerSummaryResult, len(providersToTest))
+	var wg sync.WaitGroup
+
+	for i, prov := range providersToTest {
+		wg.Add(1)
+		go func(idx int, p config.ProviderItem) {
+			defer wg.Done()
+
+			var urlsToTest []string
+			seen := make(map[string]bool)
+			primaryClean := config.CleanURL(p.XtreamBaseURL)
+			if primaryClean != "" {
+				urlsToTest = append(urlsToTest, primaryClean)
+				seen[primaryClean] = true
+			}
+			for _, b := range p.BackupURLs {
+				cb := config.CleanURL(b)
+				if cb != "" && !seen[cb] {
+					urlsToTest = append(urlsToTest, cb)
+					seen[cb] = true
+				}
+			}
+
+			results := make([]urlTestResult, len(urlsToTest))
+			var urlWg sync.WaitGroup
+			for uIdx, targetURL := range urlsToTest {
+				urlWg.Add(1)
+				go func(resIdx int, tURL string) {
+					defer urlWg.Done()
+					start := time.Now()
+					ref := p.Referer
+					if ref == "" {
+						ref = tURL
+					}
+					ua := p.UserAgent
+					if ua == "" {
+						ua = c.GetUpstreamUserAgent()
+					}
+
+					client, err := xtreamapi.New(p.XtreamUser, p.XtreamPassword, tURL, ua, ref)
+					latency := time.Since(start).Milliseconds()
+
+					if err != nil {
+						results[resIdx] = urlTestResult{
+							URL:       tURL,
+							Online:    false,
+							LatencyMs: latency,
+							Message:   fmt.Sprintf("Failed: %v", err),
+						}
+						return
+					}
+
+					liveCats, err := client.GetLiveCategories()
+					if err != nil {
+						results[resIdx] = urlTestResult{
+							URL:       tURL,
+							Online:    false,
+							LatencyMs: latency,
+							Message:   fmt.Sprintf("Auth ok, category fetch error: %v", err),
+						}
+						return
+					}
+
+					expDateStr := ""
+					if client.UserInfo.ExpDate != nil && !client.UserInfo.ExpDate.IsZero() {
+						expDateStr = client.UserInfo.ExpDate.Time.Format("2006-01-02")
+					}
+					maxConnStr := fmt.Sprintf("%d", client.UserInfo.MaxConnections)
+
+					results[resIdx] = urlTestResult{
+						URL:             tURL,
+						Online:          true,
+						LatencyMs:       latency,
+						CategoriesCount: len(liveCats),
+						Message:         fmt.Sprintf("Online! %d live categories", len(liveCats)),
+						Status:          client.UserInfo.Status,
+						ExpDate:         expDateStr,
+						MaxConnections:  maxConnStr,
+						ServerURL:       client.ServerInfo.URL,
+					}
+				}(uIdx, targetURL)
+			}
+			urlWg.Wait()
+
+			provOnline := false
+			for _, r := range results {
+				if r.Online {
+					provOnline = true
+					break
+				}
+			}
+
+			summaries[idx] = providerSummaryResult{
+				ID:      p.ID,
+				Name:    p.Name,
+				Online:  provOnline,
+				Results: results,
+			}
+		}(i, prov)
+	}
+
+	wg.Wait()
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"providers": summaries,
 	})
 }
 
@@ -158,6 +388,19 @@ func (c *Config) adminSaveProvider(ctx *gin.Context) {
 	payload.UserAgent = strings.TrimSpace(payload.UserAgent)
 	if payload.UserAgent == "" {
 		payload.UserAgent = config.DefaultUserAgent
+	}
+
+	if len(payload.Providers) == 0 {
+		existing := c.ProxyConfig.Provider.GetProviders()
+		if len(existing) > 0 {
+			existing[0].XtreamBaseURL = payload.XtreamBaseURL
+			existing[0].BackupURLs = payload.BackupURLs
+			existing[0].XtreamUser = payload.XtreamUser
+			existing[0].XtreamPassword = payload.XtreamPassword
+			existing[0].Referer = payload.Referer
+			existing[0].UserAgent = payload.UserAgent
+			payload.Providers = existing
+		}
 	}
 
 	if err := c.ProxyConfig.Provider.Save(payload); err != nil {

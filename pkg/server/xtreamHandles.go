@@ -29,15 +29,43 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jamesnetherton/m3u"
+	"github.com/pierre-emmanuelJ/iptv-proxy/pkg/config"
 	xtreamapi "github.com/pierre-emmanuelJ/iptv-proxy/pkg/xtream-proxy"
 	uuid "github.com/satori/go.uuid"
 )
+
+func getClientForProvider(prov config.ProviderItem) (*xtreamapi.Client, error) {
+	urls := []string{prov.XtreamBaseURL}
+	urls = append(urls, prov.BackupURLs...)
+	var lastErr error
+	for _, u := range urls {
+		uClean := config.CleanURL(u)
+		if uClean == "" {
+			continue
+		}
+		ref := prov.Referer
+		if ref == "" {
+			ref = uClean
+		}
+		ua := prov.UserAgent
+		if ua == "" {
+			ua = config.DefaultUserAgent
+		}
+		cli, err := xtreamapi.New(prov.XtreamUser, prov.XtreamPassword, uClean, ua, ref)
+		if err == nil {
+			return cli, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
 
 type cacheMeta struct {
 	string
@@ -79,154 +107,182 @@ func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error 
 func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Playlist, error) {
 	log.Printf("[iptv-proxy] xtreamGenerateM3u called with extension: %s", extension)
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
-	if err != nil {
-		return nil, err
-	}
+	enabled := c.GetEnabledProvidersOrFallback()
 
 	var playlist = new(m3u.Playlist)
 	playlist.Tracks = make([]m3u.Track, 0)
 
-	// Add Live Streams
-	log.Printf("[iptv-proxy] Getting live categories...")
-	liveCat, err := client.GetLiveCategories()
-	if err != nil {
-		log.Printf("[iptv-proxy] Error getting live categories: %v", err)
-		return nil, err
-	}
-	log.Printf("[iptv-proxy] Found %d live categories", len(liveCat))
-
-	// this is specific to xtream API,
-	// prefix with "live" if there is an extension.
 	var livePrefix string
 	if extension != "" {
 		livePrefix = "live/"
 	}
+	var ext string
+	if extension != "" {
+		ext = "." + extension
+	}
 
-	for _, category := range liveCat {
-		if !c.ProxyConfig.Filters.IsAllowed("live", category.Name) {
+	for provIdx, prov := range enabled {
+		client, err := getClientForProvider(prov)
+		if err != nil {
+			log.Printf("[iptv-proxy] xtreamGenerateM3u: Error connecting to provider %s (%s): %v", prov.Name, prov.XtreamBaseURL, err)
 			continue
 		}
-		live, err := client.GetLiveStreams(fmt.Sprint(category.ID))
-		if err != nil {
-			return nil, err
+
+		// 1. Live Categories & Streams
+		liveCat, err := client.GetLiveCategories()
+		if err == nil {
+			for _, category := range liveCat {
+				catDisplayName := category.Name
+				if len(enabled) > 1 {
+					catDisplayName = fmt.Sprintf("[%s] %s", prov.Name, category.Name)
+				}
+				if !c.ProxyConfig.Filters.IsAllowed("live", category.Name) && !c.ProxyConfig.Filters.IsAllowed("live", catDisplayName) {
+					continue
+				}
+
+				live, err := client.GetLiveStreams(fmt.Sprint(category.ID))
+				if err != nil {
+					continue
+				}
+
+				for _, stream := range live {
+					track := m3u.Track{Name: stream.Name, Length: -1, URI: "", Tags: nil}
+					if stream.EPGChannelID != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: stream.EPGChannelID})
+					}
+					if stream.Name != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: stream.Name})
+					}
+					if stream.Icon != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: stream.Icon})
+					}
+					track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: catDisplayName})
+
+					origID := fmt.Sprint(stream.ID)
+					var virtualID string
+					origNum, numErr := strconv.Atoi(origID)
+					if numErr == nil && provIdx > 0 {
+						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
+					} else {
+						virtualID = origID
+					}
+
+					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    origID,
+						StreamType:    "live",
+					})
+
+					track.URI = fmt.Sprintf("%s/%s%s/%s/%s%s", prov.XtreamBaseURL, livePrefix, prov.XtreamUser, prov.XtreamPassword, virtualID, ext)
+					playlist.Tracks = append(playlist.Tracks, track)
+				}
+			}
 		}
 
-		liveCount := 0
-		for _, stream := range live {
-			track := m3u.Track{Name: stream.Name, Length: -1, URI: "", Tags: nil}
+		// 2. VOD Categories & Streams
+		vodCat, err := client.GetVideoOnDemandCategories()
+		if err == nil {
+			for _, category := range vodCat {
+				catDisplayName := category.Name
+				if len(enabled) > 1 {
+					catDisplayName = fmt.Sprintf("[%s] %s", prov.Name, category.Name)
+				}
+				if !c.ProxyConfig.Filters.IsAllowed("vod", category.Name) && !c.ProxyConfig.Filters.IsAllowed("vod", catDisplayName) {
+					continue
+				}
 
-			//TODO: Add more tag if needed.
-			if stream.EPGChannelID != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: stream.EPGChannelID})
-			}
-			if stream.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: stream.Name})
-			}
-			if stream.Icon != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: stream.Icon})
-			}
-			if category.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: category.Name})
-			}
+				vods, err := client.GetVideoOnDemandStreams(fmt.Sprint(category.ID))
+				if err != nil {
+					continue
+				}
 
-			var ext string
-			if extension != "" {
-				ext = "." + extension
+				for _, vod := range vods {
+					track := m3u.Track{Name: vod.Name, Length: -1, URI: "", Tags: nil}
+					if vod.Name != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: vod.Name})
+					}
+					if vod.Icon != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: vod.Icon})
+					}
+					track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: catDisplayName})
+
+					origID := fmt.Sprint(vod.ID)
+					var virtualID string
+					origNum, numErr := strconv.Atoi(origID)
+					if numErr == nil && provIdx > 0 {
+						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
+					} else {
+						virtualID = origID
+					}
+
+					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    origID,
+						StreamType:    "movie",
+					})
+
+					track.URI = fmt.Sprintf("%s/movie/%s/%s/%s%s", prov.XtreamBaseURL, prov.XtreamUser, prov.XtreamPassword, virtualID, ext)
+					playlist.Tracks = append(playlist.Tracks, track)
+				}
 			}
-			track.URI = fmt.Sprintf("%s/%s%s/%s/%s%s", c.XtreamBaseURL, livePrefix, c.XtreamUser, c.XtreamPassword, fmt.Sprint(stream.ID), ext)
-			playlist.Tracks = append(playlist.Tracks, track)
-			liveCount++
 		}
-		log.Printf("[iptv-proxy] Added %d live streams from category: %s", liveCount, category.Name)
+
+		// 3. Series Categories & Streams
+		seriesCat, err := client.GetSeriesCategories()
+		if err == nil {
+			for _, category := range seriesCat {
+				catDisplayName := category.Name
+				if len(enabled) > 1 {
+					catDisplayName = fmt.Sprintf("[%s] %s", prov.Name, category.Name)
+				}
+				if !c.ProxyConfig.Filters.IsAllowed("series", category.Name) && !c.ProxyConfig.Filters.IsAllowed("series", catDisplayName) {
+					continue
+				}
+
+				seriesList, err := client.GetSeries(fmt.Sprint(category.ID))
+				if err != nil {
+					continue
+				}
+
+				for _, serie := range seriesList {
+					track := m3u.Track{Name: serie.Name, Length: -1, URI: "", Tags: nil}
+					if serie.Name != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: serie.Name})
+					}
+					if serie.Cover != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: serie.Cover})
+					}
+					track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: catDisplayName})
+
+					origID := fmt.Sprint(serie.SeriesID)
+					var virtualID string
+					origNum, numErr := strconv.Atoi(origID)
+					if numErr == nil && provIdx > 0 {
+						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
+					} else {
+						virtualID = origID
+					}
+
+					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    origID,
+						StreamType:    "series",
+					})
+
+					track.URI = fmt.Sprintf("%s/series/%s/%s/%s%s", prov.XtreamBaseURL, prov.XtreamUser, prov.XtreamPassword, virtualID, ext)
+					playlist.Tracks = append(playlist.Tracks, track)
+				}
+			}
+		}
 	}
 
-	// Add VOD (Movies)
-	log.Printf("[iptv-proxy] Getting VOD categories...")
-	vodCat, err := client.GetVideoOnDemandCategories()
-	if err != nil {
-		log.Printf("[iptv-proxy] Error getting VOD categories: %v", err)
-		return nil, err
-	}
-	log.Printf("[iptv-proxy] Found %d VOD categories", len(vodCat))
-
-	for _, category := range vodCat {
-		if !c.ProxyConfig.Filters.IsAllowed("vod", category.Name) {
-			continue
-		}
-		vods, err := client.GetVideoOnDemandStreams(fmt.Sprint(category.ID))
-		if err != nil {
-			return nil, err
-		}
-
-		for _, vod := range vods {
-			track := m3u.Track{Name: vod.Name, Length: -1, URI: "", Tags: nil}
-
-			//TODO: Add more tag if needed.
-			if vod.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: vod.Name})
-			}
-			if vod.Icon != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: vod.Icon})
-			}
-			if category.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: category.Name})
-			}
-
-			var ext string
-			if extension != "" {
-				ext = "." + extension
-			}
-			track.URI = fmt.Sprintf("%s/movie/%s/%s/%s%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, fmt.Sprint(vod.ID), ext)
-			playlist.Tracks = append(playlist.Tracks, track)
-		}
-	}
-
-	// Add Series
-	log.Printf("[iptv-proxy] Getting series categories...")
-	seriesCat, err := client.GetSeriesCategories()
-	if err != nil {
-		log.Printf("[iptv-proxy] Error getting series categories: %v", err)
-		return nil, err
-	}
-	log.Printf("[iptv-proxy] Found %d series categories", len(seriesCat))
-
-	for _, category := range seriesCat {
-		if !c.ProxyConfig.Filters.IsAllowed("series", category.Name) {
-			continue
-		}
-		series, err := client.GetSeries(fmt.Sprint(category.ID))
-		if err != nil {
-			return nil, err
-		}
-
-		seriesCount := 0
-		for _, serie := range series {
-			track := m3u.Track{Name: serie.Name, Length: -1, URI: "", Tags: nil}
-
-			//TODO: Add more tag if needed.
-			if serie.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: serie.Name})
-			}
-			if serie.Cover != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-logo", Value: serie.Cover})
-			}
-			if category.Name != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "group-title", Value: category.Name})
-			}
-
-			var ext string
-			if extension != "" {
-				ext = "." + extension
-			}
-			track.URI = fmt.Sprintf("%s/series/%s/%s/%s%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, fmt.Sprint(serie.SeriesID), ext)
-			playlist.Tracks = append(playlist.Tracks, track)
-			seriesCount++
-		}
-		log.Printf("[iptv-proxy] Added %d series from category: %s", seriesCount, category.Name)
-	}
-
-	log.Printf("[iptv-proxy] Total tracks in playlist: %d", len(playlist.Tracks))
+	log.Printf("[iptv-proxy] Aggregated total tracks in playlist: %d", len(playlist.Tracks))
 	return playlist, nil
 }
 
@@ -449,6 +505,8 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		action = q["action"][0]
 	}
 
+	enabled := c.GetEnabledProvidersOrFallback()
+
 	cacheKey, cacheable := c.metadataCacheKey(action, q)
 	if cacheable {
 		if entry, ok, isExpired := c.metadataCache.Get(cacheKey); ok && !isExpired {
@@ -458,21 +516,308 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		}
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
-	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
-		return
-	}
+	var resp interface{}
+	var httpcode int = http.StatusOK
+	var err error
 
-	resp, httpcode, err := client.Action(c.ProxyConfig, action, q)
-	if err != nil {
-		ctx.AbortWithError(httpcode, err) // nolint: errcheck
-		return
+	switch action {
+	case "get_live_categories", "get_vod_categories", "get_series_categories":
+		filterType := "live"
+		if action == "get_vod_categories" {
+			filterType = "vod"
+		} else if action == "get_series_categories" {
+			filterType = "series"
+		}
+
+		var aggregated []map[string]interface{}
+		for provIdx, prov := range enabled {
+			client, errClient := getClientForProvider(prov)
+			if errClient != nil {
+				log.Printf("[iptv-proxy] Warning: failed to connect to provider %s: %v", prov.Name, errClient)
+				continue
+			}
+
+			subResp, _, errAction := client.Action(c.ProxyConfig, action, q)
+			if errAction != nil {
+				log.Printf("[iptv-proxy] Warning: provider %s action %s error: %v", prov.Name, action, errAction)
+				continue
+			}
+
+			b, errM := json.Marshal(subResp)
+			if errM != nil {
+				continue
+			}
+			var list []map[string]interface{}
+			if errU := json.Unmarshal(b, &list); errU != nil {
+				continue
+			}
+
+			for _, cat := range list {
+				origName := fmt.Sprint(cat["category_name"])
+				displayName := origName
+				if len(enabled) > 1 {
+					displayName = fmt.Sprintf("[%s] %s", prov.Name, origName)
+					cat["category_name"] = displayName
+				}
+
+				if !c.ProxyConfig.Filters.IsAllowed(filterType, origName) && !c.ProxyConfig.Filters.IsAllowed(filterType, displayName) {
+					continue
+				}
+
+				if provIdx > 0 {
+					origIDStr := fmt.Sprint(cat["category_id"])
+					if num, errParse := strconv.Atoi(origIDStr); errParse == nil {
+						cat["category_id"] = strconv.Itoa((provIdx * 100000) + num)
+					} else {
+						cat["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origIDStr)
+					}
+				}
+				aggregated = append(aggregated, cat)
+			}
+		}
+		resp = aggregated
+
+	case "get_live_streams", "get_vod_streams", "get_series":
+		streamType := "live"
+		idKey := "stream_id"
+		if action == "get_vod_streams" {
+			streamType = "movie"
+		} else if action == "get_series" {
+			streamType = "series"
+			idKey = "series_id"
+		}
+
+		catParam := ""
+		if len(q["category_id"]) > 0 {
+			catParam = q["category_id"][0]
+		}
+
+		if catParam != "" {
+			provIdx := 0
+			origCatID := catParam
+			if num, errParse := strconv.Atoi(catParam); errParse == nil && num >= 100000 {
+				provIdx = num / 100000
+				origCatID = strconv.Itoa(num % 100000)
+			} else if strings.HasPrefix(catParam, "p") && strings.Contains(catParam, "_") {
+				parts := strings.SplitN(catParam, "_", 2)
+				if idx, errParse := strconv.Atoi(parts[0][1:]); errParse == nil {
+					provIdx = idx
+					origCatID = parts[1]
+				}
+			}
+
+			if provIdx < 0 || provIdx >= len(enabled) {
+				provIdx = 0
+			}
+			targetProv := enabled[provIdx]
+
+			client, errClient := getClientForProvider(targetProv)
+			if errClient != nil {
+				ctx.AbortWithError(http.StatusBadGateway, errClient)
+				return
+			}
+
+			subQ := url.Values{}
+			for k, v := range q {
+				subQ[k] = v
+			}
+			subQ.Set("category_id", origCatID)
+
+			subResp, code, errAction := client.Action(c.ProxyConfig, action, subQ)
+			if errAction != nil {
+				ctx.AbortWithError(code, errAction)
+				return
+			}
+
+			b, _ := json.Marshal(subResp)
+			var list []map[string]interface{}
+			if errU := json.Unmarshal(b, &list); errU == nil {
+				for _, item := range list {
+					rawID := fmt.Sprint(item[idKey])
+					var virtualID string
+					origNum, numErr := strconv.Atoi(rawID)
+					if numErr == nil && provIdx > 0 {
+						vNum := (provIdx * 1000000) + origNum
+						virtualID = strconv.Itoa(vNum)
+						item[idKey] = vNum
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
+						item[idKey] = virtualID
+					} else {
+						virtualID = rawID
+					}
+					item["category_id"] = catParam
+
+					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    rawID,
+						StreamType:    streamType,
+					})
+				}
+				resp = list
+			} else {
+				resp = subResp
+			}
+		} else {
+			var aggregated []map[string]interface{}
+			for provIdx, prov := range enabled {
+				client, errClient := getClientForProvider(prov)
+				if errClient != nil {
+					continue
+				}
+
+				subResp, _, errAction := client.Action(c.ProxyConfig, action, q)
+				if errAction != nil {
+					continue
+				}
+
+				b, _ := json.Marshal(subResp)
+				var list []map[string]interface{}
+				if errU := json.Unmarshal(b, &list); errU != nil {
+					continue
+				}
+
+				for _, item := range list {
+					rawID := fmt.Sprint(item[idKey])
+					var virtualID string
+					origNum, numErr := strconv.Atoi(rawID)
+					if numErr == nil && provIdx > 0 {
+						vNum := (provIdx * 1000000) + origNum
+						virtualID = strconv.Itoa(vNum)
+						item[idKey] = vNum
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
+						item[idKey] = virtualID
+					} else {
+						virtualID = rawID
+					}
+
+					if provIdx > 0 {
+						origCatStr := fmt.Sprint(item["category_id"])
+						if origCatNum, errParse := strconv.Atoi(origCatStr); errParse == nil {
+							item["category_id"] = strconv.Itoa((provIdx * 100000) + origCatNum)
+						} else {
+							item["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origCatStr)
+						}
+					}
+
+					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    rawID,
+						StreamType:    streamType,
+					})
+					aggregated = append(aggregated, item)
+				}
+			}
+			resp = aggregated
+		}
+
+	case "get_vod_info":
+		vodID := ""
+		if len(q["vod_id"]) > 0 {
+			vodID = q["vod_id"][0]
+		}
+		targetProv, origID := c.ResolveTargetStream("movie", vodID)
+		client, errClient := getClientForProvider(targetProv)
+		if errClient != nil {
+			ctx.AbortWithError(http.StatusBadGateway, errClient)
+			return
+		}
+		subQ := url.Values{}
+		for k, v := range q {
+			subQ[k] = v
+		}
+		subQ.Set("vod_id", origID)
+		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
+		if err != nil {
+			ctx.AbortWithError(httpcode, err)
+			return
+		}
+
+	case "get_series_info":
+		seriesID := ""
+		if len(q["series_id"]) > 0 {
+			seriesID = q["series_id"][0]
+		}
+		targetProv, origID := c.ResolveTargetStream("series", seriesID)
+		client, errClient := getClientForProvider(targetProv)
+		if errClient != nil {
+			ctx.AbortWithError(http.StatusBadGateway, errClient)
+			return
+		}
+		subQ := url.Values{}
+		for k, v := range q {
+			subQ[k] = v
+		}
+		subQ.Set("series_id", origID)
+		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
+		if err != nil {
+			ctx.AbortWithError(httpcode, err)
+			return
+		}
+
+		provIdx := c.FindProviderIndex(targetProv)
+		b, _ := json.Marshal(resp)
+		var seriesData map[string]interface{}
+		if errU := json.Unmarshal(b, &seriesData); errU == nil {
+			if episodes, ok := seriesData["episodes"].(map[string]interface{}); ok {
+				for _, epList := range episodes {
+					if epSlice, ok := epList.([]interface{}); ok {
+						for _, epRaw := range epSlice {
+							if epMap, ok := epRaw.(map[string]interface{}); ok {
+								if epIDVal, exists := epMap["id"]; exists {
+									epIDStr := fmt.Sprint(epIDVal)
+									c.RegisterStreamTarget(epIDStr, StreamRoutingTarget{
+										ProviderIndex: provIdx,
+										OriginalID:    epIDStr,
+										StreamType:    "series",
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+	case "get_short_epg", "get_simple_data_table":
+		streamID := ""
+		if len(q["stream_id"]) > 0 {
+			streamID = q["stream_id"][0]
+		}
+		targetProv, origID := c.ResolveTargetStream("live", streamID)
+		client, errClient := getClientForProvider(targetProv)
+		if errClient != nil {
+			ctx.AbortWithError(http.StatusBadGateway, errClient)
+			return
+		}
+		subQ := url.Values{}
+		for k, v := range q {
+			subQ[k] = v
+		}
+		subQ.Set("stream_id", origID)
+		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
+		if err != nil {
+			ctx.AbortWithError(httpcode, err)
+			return
+		}
+
+	default:
+		client, errClient := getClientForProvider(enabled[0])
+		if errClient != nil {
+			ctx.AbortWithError(http.StatusBadGateway, errClient)
+			return
+		}
+		resp, httpcode, err = client.Action(c.ProxyConfig, action, q)
+		if err != nil {
+			ctx.AbortWithError(httpcode, err)
+			return
+		}
 	}
 
 	payload, err := json.Marshal(resp)
 	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+		ctx.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -545,7 +890,8 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamHandler(ctx *gin.Context) {
 	id := ctx.Param("id")
-	rpURL, err := url.Parse(fmt.Sprintf("%s/%s/%s/%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, id))
+	targetProv, origID := c.ResolveTargetStream("live", id)
+	rpURL, err := url.Parse(fmt.Sprintf("%s/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -556,7 +902,8 @@ func (c *Config) xtreamStreamHandler(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamLive(ctx *gin.Context) {
 	id := ctx.Param("id")
-	rpURL, err := url.Parse(fmt.Sprintf("%s/live/%s/%s/%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, id))
+	targetProv, origID := c.ResolveTargetStream("live", id)
+	rpURL, err := url.Parse(fmt.Sprintf("%s/live/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -581,7 +928,8 @@ func (c *Config) xtreamStreamTimeshift(ctx *gin.Context) {
 	duration := ctx.Param("duration")
 	start := ctx.Param("start")
 	id := ctx.Param("id")
-	rpURL, err := url.Parse(fmt.Sprintf("%s/timeshift/%s/%s/%s/%s/%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, duration, start, id))
+	targetProv, origID := c.ResolveTargetStream("live", id)
+	rpURL, err := url.Parse(fmt.Sprintf("%s/timeshift/%s/%s/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, duration, start, origID))
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -592,7 +940,8 @@ func (c *Config) xtreamStreamTimeshift(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamMovie(ctx *gin.Context) {
 	id := ctx.Param("id")
-	rpURL, err := url.Parse(fmt.Sprintf("%s/movie/%s/%s/%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, id))
+	targetProv, origID := c.ResolveTargetStream("movie", id)
+	rpURL, err := url.Parse(fmt.Sprintf("%s/movie/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -603,7 +952,8 @@ func (c *Config) xtreamStreamMovie(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamSeries(ctx *gin.Context) {
 	id := ctx.Param("id")
-	rpURL, err := url.Parse(fmt.Sprintf("%s/series/%s/%s/%s", c.XtreamBaseURL, c.XtreamUser, c.XtreamPassword, id))
+	targetProv, origID := c.ResolveTargetStream("series", id)
+	rpURL, err := url.Parse(fmt.Sprintf("%s/series/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -846,6 +1196,13 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 			if isPlaylist {
 				body := string(b)
 				body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+				if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+					for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+						if prov.XtreamUser != "" && prov.XtreamPassword != "" {
+							body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+						}
+					}
+				}
 				mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
 				ctx.Data(http.StatusOK, hlsResp.Header.Get("Content-Type"), []byte(body))
 				return

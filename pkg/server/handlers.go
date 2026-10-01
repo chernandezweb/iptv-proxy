@@ -158,8 +158,11 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	// User-Agent masquerading: use single unified User-Agent for all devices to prevent fingerprinting
 	req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
 
-	if c.Referer != "" {
+	targetHost := oriURL.Scheme + "://" + oriURL.Host
+	if c.Referer != "" && strings.Contains(c.Referer, oriURL.Host) {
 		req.Header.Set("Referer", c.Referer)
+	} else {
+		req.Header.Set("Referer", targetHost)
 	}
 
 	// Anti-IP leak: strip all proxy and client IP headers so provider only sees VPS IP
@@ -180,6 +183,18 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	// If the primary request failed (network/timeout error) or returned 5xx server error,
 	// automatically failover across configured backup URLs.
 	backupURLs := c.GetAllProviderURLs()
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+			if strings.Contains(prov.XtreamBaseURL, req.URL.Host) {
+				for _, b := range prov.BackupURLs {
+					if cb := config.CleanURL(b); cb != "" {
+						backupURLs = append(backupURLs, cb)
+					}
+				}
+				break
+			}
+		}
+	}
 	if len(backupURLs) > 1 {
 		currentHost := req.URL.Host
 		for _, bURL := range backupURLs {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -12,14 +13,29 @@ import (
 // DefaultUserAgent is the standard upstream User-Agent to avoid player fingerprinting and blocks.
 const DefaultUserAgent = "IPTVSmartersPro"
 
-// ProviderData contains upstream Xtream provider settings and backup URL list.
-type ProviderData struct {
+// ProviderItem represents a distinct upstream Xtream IPTV provider subscription.
+type ProviderItem struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Enabled        bool     `json:"enabled"`
 	XtreamBaseURL  string   `json:"xtream_base_url"`
 	BackupURLs     []string `json:"backup_urls"`
 	XtreamUser     string   `json:"xtream_user"`
 	XtreamPassword string   `json:"xtream_password"`
 	Referer        string   `json:"referer"`
 	UserAgent      string   `json:"user_agent"`
+	CategoryPrefix string   `json:"category_prefix,omitempty"`
+}
+
+// ProviderData contains upstream Xtream provider settings and multi-provider list.
+type ProviderData struct {
+	XtreamBaseURL  string         `json:"xtream_base_url"`
+	BackupURLs     []string       `json:"backup_urls"`
+	XtreamUser     string         `json:"xtream_user"`
+	XtreamPassword string         `json:"xtream_password"`
+	Referer        string         `json:"referer"`
+	UserAgent      string         `json:"user_agent"`
+	Providers      []ProviderItem `json:"providers"`
 }
 
 // Provider manages persistent provider configuration.
@@ -162,6 +178,62 @@ func (p *Provider) Load() {
 	} else {
 		p.Data.UserAgent = DefaultUserAgent
 	}
+
+	// Handle multi-provider initialization
+	if len(loaded.Providers) == 0 && p.Data.XtreamBaseURL != "" {
+		p.Data.Providers = []ProviderItem{
+			{
+				ID:             "provider_1",
+				Name:           "Primary Provider",
+				Enabled:        true,
+				XtreamBaseURL:  p.Data.XtreamBaseURL,
+				BackupURLs:     p.Data.BackupURLs,
+				XtreamUser:     p.Data.XtreamUser,
+				XtreamPassword: p.Data.XtreamPassword,
+				Referer:        p.Data.Referer,
+				UserAgent:      p.Data.UserAgent,
+			},
+		}
+	} else if len(loaded.Providers) > 0 {
+		p.Data.Providers = make([]ProviderItem, 0, len(loaded.Providers))
+		for idx, prov := range loaded.Providers {
+			if prov.ID == "" {
+				prov.ID = fmt.Sprintf("provider_%d", idx+1)
+			}
+			if prov.Name == "" {
+				prov.Name = fmt.Sprintf("Provider %d", idx+1)
+			}
+			prov.XtreamBaseURL = CleanURL(prov.XtreamBaseURL)
+			prov.BackupURLs = CleanURLList(prov.BackupURLs)
+			if prov.Referer == "" {
+				prov.Referer = prov.XtreamBaseURL
+			} else {
+				prov.Referer = CleanURL(prov.Referer)
+			}
+			if prov.UserAgent == "" || strings.Contains(prov.UserAgent, "Chrome/128") {
+				prov.UserAgent = DefaultUserAgent
+			}
+			p.Data.Providers = append(p.Data.Providers, prov)
+		}
+	}
+
+	// Sync top-level active provider
+	if len(p.Data.Providers) > 0 {
+		active := p.Data.Providers[0]
+		for _, prov := range p.Data.Providers {
+			if prov.Enabled {
+				active = prov
+				break
+			}
+		}
+		p.Data.XtreamBaseURL = active.XtreamBaseURL
+		p.Data.BackupURLs = active.BackupURLs
+		p.Data.XtreamUser = active.XtreamUser
+		p.Data.XtreamPassword = active.XtreamPassword
+		p.Data.Referer = active.Referer
+		p.Data.UserAgent = active.UserAgent
+	}
+
 	log.Println("[iptv-proxy] Loaded provider.json successfully")
 }
 
@@ -170,15 +242,65 @@ func (p *Provider) Save(data ProviderData) error {
 	p.Lock()
 	defer p.Unlock()
 
-	data.XtreamBaseURL = CleanURL(data.XtreamBaseURL)
-	data.BackupURLs = CleanURLList(data.BackupURLs)
-	if data.Referer == "" && data.XtreamBaseURL != "" {
-		data.Referer = data.XtreamBaseURL
-	} else {
-		data.Referer = CleanURL(data.Referer)
+	for i := range data.Providers {
+		if data.Providers[i].ID == "" {
+			data.Providers[i].ID = fmt.Sprintf("provider_%d", i+1)
+		}
+		if data.Providers[i].Name == "" {
+			data.Providers[i].Name = fmt.Sprintf("Provider %d", i+1)
+		}
+		data.Providers[i].XtreamBaseURL = CleanURL(data.Providers[i].XtreamBaseURL)
+		data.Providers[i].BackupURLs = CleanURLList(data.Providers[i].BackupURLs)
+		if data.Providers[i].Referer == "" {
+			data.Providers[i].Referer = data.Providers[i].XtreamBaseURL
+		} else {
+			data.Providers[i].Referer = CleanURL(data.Providers[i].Referer)
+		}
+		if data.Providers[i].UserAgent == "" {
+			data.Providers[i].UserAgent = DefaultUserAgent
+		}
 	}
-	if data.UserAgent == "" {
-		data.UserAgent = DefaultUserAgent
+
+	if len(data.Providers) == 0 && data.XtreamBaseURL != "" {
+		data.XtreamBaseURL = CleanURL(data.XtreamBaseURL)
+		data.BackupURLs = CleanURLList(data.BackupURLs)
+		if data.Referer == "" {
+			data.Referer = data.XtreamBaseURL
+		} else {
+			data.Referer = CleanURL(data.Referer)
+		}
+		if data.UserAgent == "" {
+			data.UserAgent = DefaultUserAgent
+		}
+		data.Providers = []ProviderItem{
+			{
+				ID:             "provider_1",
+				Name:           "Primary Provider",
+				Enabled:        true,
+				XtreamBaseURL:  data.XtreamBaseURL,
+				BackupURLs:     data.BackupURLs,
+				XtreamUser:     data.XtreamUser,
+				XtreamPassword: data.XtreamPassword,
+				Referer:        data.Referer,
+				UserAgent:      data.UserAgent,
+			},
+		}
+	}
+
+	if len(data.Providers) > 0 {
+		active := data.Providers[0]
+		for _, prov := range data.Providers {
+			if prov.Enabled {
+				active = prov
+				break
+			}
+		}
+		data.XtreamBaseURL = active.XtreamBaseURL
+		data.BackupURLs = active.BackupURLs
+		data.XtreamUser = active.XtreamUser
+		data.XtreamPassword = active.XtreamPassword
+		data.Referer = active.Referer
+		data.UserAgent = active.UserAgent
 	}
 
 	p.Data = data
@@ -196,6 +318,37 @@ func (p *Provider) GetData() ProviderData {
 	p.RLock()
 	defer p.RUnlock()
 	return p.Data
+}
+
+// GetProviders returns a copy of all configured providers.
+func (p *Provider) GetProviders() []ProviderItem {
+	p.RLock()
+	defer p.RUnlock()
+	res := make([]ProviderItem, len(p.Data.Providers))
+	copy(res, p.Data.Providers)
+	return res
+}
+
+// GetEnabledProviders returns a slice of only enabled providers.
+func (p *Provider) GetEnabledProviders() []ProviderItem {
+	p.RLock()
+	defer p.RUnlock()
+	var res []ProviderItem
+	for _, prov := range p.Data.Providers {
+		if prov.Enabled {
+			res = append(res, prov)
+		}
+	}
+	return res
+}
+
+// GetEnabledProviderByIndex returns the enabled provider at a given index.
+func (p *Provider) GetEnabledProviderByIndex(idx int) (ProviderItem, bool) {
+	enabled := p.GetEnabledProviders()
+	if idx < 0 || idx >= len(enabled) {
+		return ProviderItem{}, false
+	}
+	return enabled[idx], true
 }
 
 // GetAllURLs returns active URL followed by unique backup URLs.

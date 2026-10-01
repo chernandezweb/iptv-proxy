@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,13 @@ import (
 
 var defaultProxyfiedM3UPath = filepath.Join(os.TempDir(), uuid.NewV4().String()+".iptv-proxy.m3u")
 var endpointAntiColision = strings.Split(uuid.NewV4().String(), "-")[0]
+
+// StreamRoutingTarget maps a virtual stream ID to its upstream provider and original ID.
+type StreamRoutingTarget struct {
+	ProviderIndex int
+	OriginalID    string
+	StreamType    string // "live", "movie", "series"
+}
 
 // Config represent the server configuration
 type Config struct {
@@ -62,6 +70,9 @@ type Config struct {
 	streamHub     *StreamHub
 	httpClient    *http.Client
 	baseStreamURL *url.URL
+
+	streamRoutingMap  map[string]StreamRoutingTarget
+	streamRoutingLock sync.RWMutex
 
 	refreshing      map[string]bool
 	refreshingMutex sync.Mutex
@@ -104,6 +115,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
 	cfg.chunkCache = newChunkCache(15 * time.Second)
 	cfg.streamHub = newStreamHub()
+	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
 	cfg.httpClient = newUpstreamHTTPClient(cfg)
 	cfg.ProxyConfig.Filters = config.NewFilters("filters.json")
 	cfg.ProxyConfig.Provider = config.NewProvider("provider.json", config.ProviderData{
@@ -217,6 +229,16 @@ func (c *Config) replaceURL(uri string, trackIndex int, xtream bool) (string, er
 	if xtream {
 		uriPath = strings.ReplaceAll(uriPath, c.XtreamUser.PathEscape(), c.User.PathEscape())
 		uriPath = strings.ReplaceAll(uriPath, c.XtreamPassword.PathEscape(), c.Password.PathEscape())
+		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
+				if prov.XtreamUser != "" {
+					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamUser), c.User.PathEscape())
+				}
+				if prov.XtreamPassword != "" {
+					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamPassword), c.Password.PathEscape())
+				}
+			}
+		}
 	} else {
 		uriPath = path.Join("/", c.endpointAntiColision, c.User.PathEscape(), c.Password.PathEscape(), fmt.Sprintf("%d", trackIndex), path.Base(uriPath))
 	}
@@ -332,5 +354,108 @@ func (c *Config) ReplaceBaseURL(targetURL *url.URL, newBaseURL string) (*url.URL
 	res.Scheme = parsedBase.Scheme
 	res.Host = parsedBase.Host
 	return &res, nil
+}
+
+// RegisterStreamTarget saves the mapping between a virtual stream ID and its upstream target.
+func (c *Config) RegisterStreamTarget(virtualID string, target StreamRoutingTarget) {
+	if c == nil {
+		return
+	}
+	c.streamRoutingLock.Lock()
+	if c.streamRoutingMap == nil {
+		c.streamRoutingMap = make(map[string]StreamRoutingTarget)
+	}
+	c.streamRoutingMap[virtualID] = target
+	c.streamRoutingLock.Unlock()
+}
+
+// ResolveTargetStream resolves which upstream provider and original stream ID a client request belongs to.
+func (c *Config) ResolveTargetStream(streamType string, rawID string) (config.ProviderItem, string) {
+	var enabled []config.ProviderItem
+	if c != nil && c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		enabled = c.ProxyConfig.Provider.GetEnabledProviders()
+	}
+
+	if len(enabled) == 0 {
+		return config.ProviderItem{
+			XtreamBaseURL:  c.XtreamBaseURL,
+			XtreamUser:     string(c.XtreamUser),
+			XtreamPassword: string(c.XtreamPassword),
+			Referer:        c.Referer,
+			UserAgent:      c.GetUpstreamUserAgent(),
+		}, rawID
+	}
+
+	ext := path.Ext(rawID)
+	base := strings.TrimSuffix(rawID, ext)
+
+	// 1. Check in-memory map
+	c.streamRoutingLock.RLock()
+	if target, found := c.streamRoutingMap[base]; found {
+		c.streamRoutingLock.RUnlock()
+		if target.ProviderIndex >= 0 && target.ProviderIndex < len(enabled) {
+			return enabled[target.ProviderIndex], target.OriginalID + ext
+		}
+	} else {
+		c.streamRoutingLock.RUnlock()
+	}
+
+	// 2. Check alphanumeric prefix format: p<index>_<id>
+	if strings.HasPrefix(base, "p") && strings.Contains(base, "_") {
+		parts := strings.SplitN(base, "_", 2)
+		if idx, err := strconv.Atoi(parts[0][1:]); err == nil && idx >= 0 && idx < len(enabled) {
+			return enabled[idx], parts[1] + ext
+		}
+	}
+
+	// 3. Check numeric deterministic offset: (providerIndex * 1,000,000) + id
+	if num, err := strconv.Atoi(base); err == nil {
+		idx := num / 1000000
+		origNum := num % 1000000
+		if idx >= 0 && idx < len(enabled) {
+			return enabled[idx], fmt.Sprintf("%d%s", origNum, ext)
+		}
+	}
+
+	// Default to first enabled provider
+	return enabled[0], rawID
+}
+
+// FindProviderIndex returns the index of a given provider in the enabled providers slice.
+func (c *Config) FindProviderIndex(prov config.ProviderItem) int {
+	if c == nil || c.ProxyConfig == nil || c.ProxyConfig.Provider == nil {
+		return 0
+	}
+	enabled := c.ProxyConfig.Provider.GetEnabledProviders()
+	for i, p := range enabled {
+		if p.ID == prov.ID || (p.XtreamBaseURL == prov.XtreamBaseURL && p.XtreamUser == prov.XtreamUser) {
+			return i
+		}
+	}
+	return 0
+}
+
+// GetEnabledProvidersOrFallback returns enabled providers, falling back to legacy single provider fields if empty.
+func (c *Config) GetEnabledProvidersOrFallback() []config.ProviderItem {
+	var enabled []config.ProviderItem
+	if c != nil && c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		enabled = c.ProxyConfig.Provider.GetEnabledProviders()
+	}
+	if len(enabled) == 0 {
+		return []config.ProviderItem{
+			{
+				ID:             "provider_1",
+				Name:           "Primary Provider",
+				Enabled:        true,
+				XtreamBaseURL:  c.XtreamBaseURL,
+				BackupURLs:     c.BackupURLs,
+				XtreamUser:     string(c.XtreamUser),
+				XtreamPassword: string(c.XtreamPassword),
+				Referer:        c.Referer,
+				UserAgent:      c.GetUpstreamUserAgent(),
+			},
+		}
+	}
+	return enabled
 }
 

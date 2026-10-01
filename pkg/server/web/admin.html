@@ -160,12 +160,29 @@
         .btn-test {
             background-color: transparent;
             border-color: var(--primary);
-            color: var(--primary);
+            color: #a5b4fc;
         }
 
         .btn-test:hover:not(:disabled) {
             background-color: var(--primary-light);
             color: #fff;
+        }
+
+        .btn-rotate {
+            background-color: transparent;
+            border-color: var(--warning);
+            color: #fcd34d;
+        }
+
+        .btn-rotate:hover:not(:disabled) {
+            background-color: var(--warning-bg);
+            color: #fff;
+        }
+
+        .btn-sm {
+            padding: 0.3rem 0.65rem;
+            font-size: 0.775rem;
+            border-radius: 0.375rem;
         }
 
         .tabs {
@@ -234,7 +251,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Form Grid for Provider Settings */
         .form-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -264,14 +280,15 @@
             color: #cbd5e1;
             display: flex;
             justify-content: space-between;
+            align-items: center;
         }
 
         .label-code {
             font-family: monospace;
             font-size: 0.75rem;
-            color: var(--primary);
+            color: #a5b4fc;
             background: var(--primary-light);
-            padding: 0.1rem 0.4rem;
+            padding: 0.1rem 0.45rem;
             border-radius: 0.25rem;
         }
 
@@ -281,7 +298,7 @@
             align-items: center;
         }
 
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], textarea {
             width: 100%;
             padding: 0.75rem 1rem;
             border-radius: var(--radius);
@@ -289,10 +306,19 @@
             background-color: var(--bg-input);
             color: var(--text);
             font-size: 0.925rem;
+            font-family: inherit;
             transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        input[type="text"]:focus, input[type="password"]:focus {
+        textarea {
+            resize: vertical;
+            min-height: 85px;
+            font-family: monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
             outline: none;
             border-color: var(--border-focus);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
@@ -306,9 +332,7 @@
             color: var(--text-muted);
             cursor: pointer;
             padding: 0.25rem;
-            display: flex;
-            align-items: center;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
         }
 
         .toggle-pwd:hover {
@@ -321,17 +345,26 @@
             margin-top: 0.15rem;
         }
 
+        .override-link {
+            font-size: 0.8rem;
+            color: #a5b4fc;
+            text-decoration: underline;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 0.25rem;
+        }
+
         .form-actions {
             display: flex;
-            gap: 1rem;
+            gap: 0.75rem;
             justify-content: flex-end;
             padding-top: 1.5rem;
             border-top: 1px solid var(--border);
             flex-wrap: wrap;
         }
 
-        /* Provider Details Card */
-        .info-card {
+        /* URL Pool Table & Cards */
+        .pool-card {
             background-color: var(--bg-card-subtle);
             border: 1px solid var(--border);
             border-radius: var(--radius);
@@ -339,39 +372,65 @@
             margin-top: 1.5rem;
         }
 
-        .info-card h3 {
+        .pool-card h3 {
             margin: 0 0 0.75rem 0;
             font-size: 0.95rem;
             color: var(--text);
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            justify-content: space-between;
         }
 
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1rem;
+        .url-list-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
         }
 
-        .info-item {
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
+        .url-list-table th, .url-list-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
         }
 
-        .info-label {
-            font-size: 0.75rem;
+        .url-list-table th {
             color: var(--text-muted);
+            font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
-        .info-value {
-            font-size: 0.9rem;
+        .url-list-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .url-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.2rem 0.55rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
             font-weight: 600;
-            color: var(--text);
-            word-break: break-all;
+        }
+
+        .url-pill.active {
+            background: var(--primary-light);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
+
+        .url-pill.online {
+            background: var(--success-bg);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .url-pill.offline {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
         /* Controls for category filters */
@@ -474,12 +533,6 @@
             flex-wrap: wrap;
         }
 
-        .alert-banner.warning {
-            background-color: var(--warning-bg);
-            border-color: rgba(245, 158, 11, 0.3);
-            color: #fcd34d;
-        }
-
         .alert-banner.info {
             background-color: var(--primary-light);
             border-color: rgba(99, 102, 241, 0.3);
@@ -502,12 +555,12 @@
             border: 3px solid rgba(255, 255, 255, 0.1);
             border-left-color: var(--primary);
             border-radius: 50%;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             animation: spin 0.8s linear infinite;
             display: inline-block;
             vertical-align: middle;
-            margin-right: 0.5rem;
+            margin-right: 0.4rem;
         }
 
         @keyframes spin {
@@ -537,6 +590,7 @@
 
         .toast.success { border-color: var(--success); }
         .toast.error { border-color: var(--danger); }
+        .toast.warning { border-color: var(--warning); }
         .toast.show {
             opacity: 1;
             transform: translateY(0);
@@ -549,7 +603,7 @@
     <header>
         <div class="header-title">
             <h1>IPTV Proxy Admin</h1>
-            <p class="subtitle">Configure upstream Xtream provider credentials &amp; channel category filters</p>
+            <p class="subtitle">Xtream Provider Failover Pool &amp; Channel Category Filters</p>
         </div>
         <div class="header-actions">
             <div id="statusBadge" class="status-badge loading">
@@ -594,34 +648,46 @@
     <!-- PROVIDER SETTINGS TAB -->
     <div id="providerTab" class="tab-content active">
         <div style="margin-bottom: 1.5rem;">
-            <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; font-weight: 600;">Xtream Codes Provider Configuration</h2>
-            <p class="subtitle">Edit your upstream IPTV provider credentials, server base URL, and anti-blocking HTTP Referer header.</p>
+            <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; font-weight: 600;">Xtream Codes Provider &amp; Backup Failover Pool</h2>
+            <p class="subtitle">Configure your primary and backup server URLs. The HTTP Referer header is automatically synced with the active server URL.</p>
         </div>
 
         <form id="providerForm" onsubmit="event.preventDefault(); saveProvider();">
             <div class="form-grid">
-                <div class="form-group">
+                <!-- Unified Provider URL & Referer Input -->
+                <div class="form-group full-width">
                     <label for="xtreamBaseURL">
-                        <span>Provider Server URL</span>
-                        <span class="label-code">XTREAM_BASE_URL</span>
+                        <span>Active Provider Server URL &amp; Referer</span>
+                        <span class="label-code">XTREAM_BASE_URL &amp; REFERER</span>
                     </label>
                     <div class="input-wrapper">
-                        <input type="text" id="xtreamBaseURL" placeholder="https://provider-domain.com" required autocomplete="off">
+                        <input type="text" id="xtreamBaseURL" placeholder="http://cf.stay88best.com" required autocomplete="off">
                     </div>
-                    <span class="help-text">Domain or IP address of your IPTV provider (protocol http:// or https://)</span>
+                    <span class="help-text">
+                        The active IPTV provider server. This URL is also automatically used as the <strong>HTTP Referer header</strong> for all upstream requests to prevent anti-proxy / 403 Forbidden blocks.
+                    </span>
+                    <span class="override-link" onclick="toggleRefererOverride()">
+                        ⚙️ Advanced: Specify different custom Referer header override
+                    </span>
+                    <div id="customRefererWrapper" style="display: none; margin-top: 0.5rem;">
+                        <input type="text" id="referer" placeholder="Leave blank to automatically match Active URL" autocomplete="off">
+                        <span class="help-text">Optional: Only fill this if your provider requires a referer domain different from the server URL.</span>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="referer">
-                        <span>HTTP Referer Header</span>
-                        <span class="label-code">REFERER</span>
+                <!-- Backup URLs Pool -->
+                <div class="form-group full-width">
+                    <label for="backupURLs">
+                        <span>Backup / Fallback Server URLs (Auto-Failover Pool)</span>
+                        <span class="label-code">AUTO-FAILOVER POOL</span>
                     </label>
-                    <div class="input-wrapper">
-                        <input type="text" id="referer" placeholder="https://provider-domain.com" autocomplete="off">
-                    </div>
-                    <span class="help-text">Sent in requests to prevent 403 Forbidden / anti-proxy blocking by provider</span>
+                    <textarea id="backupURLs" placeholder="http://line2.stay88best.com&#10;http://backup.stay88best.com" rows="3"></textarea>
+                    <span class="help-text">
+                        Enter backup URLs (one per line). If the active provider server drops down or times out, the proxy will <strong>automatically test, rotate, and failover</strong> to an available backup URL.
+                    </span>
                 </div>
 
+                <!-- Credentials -->
                 <div class="form-group">
                     <label for="xtreamUser">
                         <span>Provider Username</span>
@@ -647,8 +713,11 @@
             </div>
 
             <div class="form-actions">
+                <button type="button" class="btn btn-rotate" id="rotateBtn" onclick="rotateURL()" title="Manually rotate to the next backup URL">
+                    🔄 Rotate to Next URL
+                </button>
                 <button type="button" class="btn btn-test" id="testBtn" onclick="testConnection()">
-                    🧪 Test Connection
+                    🧪 Test All URLs
                 </button>
                 <button type="submit" class="btn" id="saveProviderBtn">
                     💾 Save Provider Settings
@@ -656,30 +725,24 @@
             </div>
         </form>
 
-        <div id="testResultCard" class="info-card" style="display: none;">
-            <h3>📊 Connection Details</h3>
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="info-label">Account Status</span>
-                    <span class="info-value" id="resStatus">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Expiry Date</span>
-                    <span class="info-value" id="resExp">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Max Connections</span>
-                    <span class="info-value" id="resMaxConn">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Active Connections</span>
-                    <span class="info-value" id="resActiveConn">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Server Host</span>
-                    <span class="info-value" id="resServerURL">-</span>
-                </div>
-            </div>
+        <!-- Multi-URL Health Results Card -->
+        <div id="testResultCard" class="pool-card" style="display: none;">
+            <h3>
+                <span>📊 Server URLs Health &amp; Failover Status</span>
+                <span id="testSummaryBadge" class="status-badge online" style="font-size: 0.75rem;">Tested</span>
+            </h3>
+            <table class="url-list-table">
+                <thead>
+                    <tr>
+                        <th>Server URL</th>
+                        <th>Status</th>
+                        <th>Latency</th>
+                        <th>Categories / Details</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="urlTableBody"></tbody>
+            </table>
         </div>
     </div>
 
@@ -741,7 +804,7 @@
     let state = {
         live: [], vod: [], series: [],
         filters: { allowed_live_categories: [], allowed_vod_categories: [], allowed_series_categories: [] },
-        provider: { xtream_base_url: '', xtream_user: '', xtream_password: '', referer: '' },
+        provider: { xtream_base_url: '', backup_urls: [], xtream_user: '', xtream_password: '', referer: '' },
         currentTab: 'provider'
     };
 
@@ -765,11 +828,19 @@
 
     function togglePasswordVisibility(inputId) {
         const input = document.getElementById(inputId);
-        if (input.type === 'password') {
-            input.type = 'text';
-        } else {
-            input.type = 'password';
-        }
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function toggleRefererOverride() {
+        const wrap = document.getElementById('customRefererWrapper');
+        wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function getBackupURLsFromText() {
+        const raw = document.getElementById('backupURLs').value;
+        return raw.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
     }
 
     async function loadProvider() {
@@ -782,7 +853,16 @@
             document.getElementById('xtreamBaseURL').value = data.xtream_base_url || '';
             document.getElementById('xtreamUser').value = data.xtream_user || '';
             document.getElementById('xtreamPassword').value = data.xtream_password || '';
-            document.getElementById('referer').value = data.referer || '';
+
+            const backups = data.backup_urls || [];
+            document.getElementById('backupURLs').value = backups.join('\n');
+
+            if (data.referer && data.referer !== data.xtream_base_url) {
+                document.getElementById('referer').value = data.referer;
+                document.getElementById('customRefererWrapper').style.display = 'block';
+            } else {
+                document.getElementById('referer').value = '';
+            }
         } catch (e) {
             console.error('Error loading provider settings:', e);
         }
@@ -792,16 +872,19 @@
         const btn = document.getElementById('testBtn');
         const oldText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;margin-right:6px;"></span> Testing...';
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Testing URLs...';
 
+        const activeURL = document.getElementById('xtreamBaseURL').value.trim();
         const payload = {
-            xtream_base_url: document.getElementById('xtreamBaseURL').value.trim(),
+            xtream_base_url: activeURL,
+            backup_urls: getBackupURLsFromText(),
             xtream_user: document.getElementById('xtreamUser').value.trim(),
             xtream_password: document.getElementById('xtreamPassword').value.trim(),
             referer: document.getElementById('referer').value.trim()
         };
 
         const resultCard = document.getElementById('testResultCard');
+        const tableBody = document.getElementById('urlTableBody');
 
         try {
             const res = await fetch('/admin/api/provider/test', {
@@ -811,47 +894,102 @@
             });
             const data = await res.json();
 
-            if (data.success) {
-                showToast(data.message || 'Connection successful!', 'success');
-                updateStatusBadge('online', 'Connected');
-                document.getElementById('providerAlert').style.display = 'none';
-
+            if (data.results && data.results.length > 0) {
                 resultCard.style.display = 'block';
-                document.getElementById('resStatus').innerText = data.status || 'Active';
-                document.getElementById('resExp').innerText = formatExpDate(data.exp_date);
-                document.getElementById('resMaxConn').innerText = data.max_connections || 'Unlimited';
-                document.getElementById('resActiveConn').innerText = data.active_connections || '0';
-                document.getElementById('resServerURL').innerText = data.server_url || payload.xtream_base_url;
+                let html = '';
+
+                data.results.forEach(item => {
+                    const isActive = (item.url === activeURL);
+                    const statusClass = item.online ? 'online' : 'offline';
+                    const statusText = item.online ? 'Online' : 'Offline';
+
+                    html += `
+                        <tr>
+                            <td>
+                                <strong>${escapeHtml(item.url)}</strong>
+                                ${isActive ? '<span class="url-pill active" style="margin-left:6px;">Active</span>' : ''}
+                            </td>
+                            <td>
+                                <span class="url-pill ${statusClass}">${statusText}</span>
+                            </td>
+                            <td>${item.latency_ms > 0 ? item.latency_ms + ' ms' : '-'}</td>
+                            <td>${escapeHtml(item.message || '')}</td>
+                            <td>
+                                ${!isActive && item.online ? `
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="makeActive('${escapeHtml(item.url)}')">
+                                        Make Active
+                                    </button>
+                                ` : (isActive ? '<span style="color:var(--text-muted);font-size:0.8rem;">Current Active</span>' : '-')}
+                            </td>
+                        </tr>
+                    `;
+                });
+                tableBody.innerHTML = html;
+
+                if (data.success) {
+                    showToast('Server URLs tested successfully!', 'success');
+                    updateStatusBadge('online', 'Connected');
+                    document.getElementById('providerAlert').style.display = 'none';
+                } else {
+                    showToast('All tested URLs failed to connect', 'error');
+                    updateStatusBadge('error', 'Connection Failed');
+                }
             } else {
-                showToast(data.error || 'Connection failed', 'error');
-                updateStatusBadge('error', 'Connection Failed');
-                resultCard.style.display = 'none';
+                showToast(data.error || 'Test failed', 'error');
             }
         } catch (e) {
             showToast('Test request failed: ' + e.message, 'error');
-            updateStatusBadge('error', 'Connection Failed');
-            resultCard.style.display = 'none';
         } finally {
             btn.disabled = false;
             btn.innerHTML = oldText;
         }
     }
 
-    function formatExpDate(timestamp) {
-        if (!timestamp) return 'Never / Unlimited';
-        const num = parseInt(timestamp, 10);
-        if (isNaN(num) || num <= 0) return timestamp;
-        return new Date(num * 1000).toLocaleDateString() + ' ' + new Date(num * 1000).toLocaleTimeString();
+    async function makeActive(url) {
+        document.getElementById('xtreamBaseURL').value = url;
+        // remove this url from backup textarea and add old active
+        await saveProvider();
+    }
+
+    async function rotateURL() {
+        const btn = document.getElementById('rotateBtn');
+        const oldText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Rotating...';
+
+        try {
+            const res = await fetch('/admin/api/provider/rotate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                showToast(data.message || 'Rotated provider URL!', 'success');
+                await loadProvider();
+                await loadCategories();
+            } else {
+                showToast(data.message || 'Rotation warning', 'warning');
+            }
+        } catch (e) {
+            showToast('Rotation failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = oldText;
+        }
     }
 
     async function saveProvider() {
         const btn = document.getElementById('saveProviderBtn');
         const oldText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;margin-right:6px;"></span> Saving...';
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;"></span> Saving...';
 
+        const activeURL = document.getElementById('xtreamBaseURL').value.trim();
         const payload = {
-            xtream_base_url: document.getElementById('xtreamBaseURL').value.trim(),
+            xtream_base_url: activeURL,
+            backup_urls: getBackupURLsFromText(),
             xtream_user: document.getElementById('xtreamUser').value.trim(),
             xtream_password: document.getElementById('xtreamPassword').value.trim(),
             referer: document.getElementById('referer').value.trim()
@@ -866,8 +1004,8 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
 
-            showToast(data.message || 'Provider settings saved successfully!', 'success');
-            // Refresh categories with new provider
+            showToast(data.message || 'Provider & Backup URLs saved successfully!', 'success');
+            await loadProvider();
             await loadCategories();
         } catch (e) {
             showToast('Failed to save provider settings: ' + e.message, 'error');
@@ -885,6 +1023,10 @@
             const res = await fetch('/admin/api/categories');
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
+
+            if (data.active_url) {
+                document.getElementById('xtreamBaseURL').value = data.active_url;
+            }
 
             if (data.error || data.warning) {
                 const msg = data.error || data.warning;
@@ -931,7 +1073,7 @@
     function isSelected(type, name) {
         const key = `allowed_${type}_categories`;
         const filters = state.filters[key] || [];
-        if (filters.length === 0) return true; // Empty means all allowed
+        if (filters.length === 0) return true;
         return filters.some(f => name.toUpperCase().startsWith(f.toUpperCase()));
     }
 
@@ -1003,7 +1145,6 @@
             const checkboxes = document.querySelectorAll(`.${type}-cb`);
             const total = checkboxes.length;
             const checked = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-            // If all are checked or empty, send empty array to allow all
             if (checked.length === total) return [];
             return checked;
         };
@@ -1043,7 +1184,7 @@
         const icon = document.getElementById('toastIcon');
         const text = document.getElementById('toastMsg');
 
-        icon.innerText = type === 'success' ? '✅' : '❌';
+        icon.innerText = type === 'success' ? '✅' : (type === 'warning' ? '⚠️' : '❌');
         text.innerText = msg;
         toast.className = 'toast show ' + type;
 

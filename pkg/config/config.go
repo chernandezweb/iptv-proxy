@@ -54,6 +54,7 @@ type ProxyConfig struct {
 	XMLTVCacheTTL        time.Duration
 	Filters              *Filters
 	Provider             *Provider
+	BackupURLs           []string
 	Referer              string
 	M3UFileName          string
 	CustomEndpoint       string

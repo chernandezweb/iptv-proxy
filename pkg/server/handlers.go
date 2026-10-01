@@ -163,6 +163,43 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 	}
 
 	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode < 500 {
+		return resp, nil
+	}
+
+	// If the primary request failed (network/timeout error) or returned 5xx server error,
+	// automatically failover across configured backup URLs.
+	backupURLs := c.GetAllProviderURLs()
+	if len(backupURLs) > 1 {
+		currentHost := req.URL.Host
+		for _, bURL := range backupURLs {
+			parsedBackup, errP := url.Parse(bURL)
+			if errP != nil || parsedBackup.Host == currentHost {
+				continue
+			}
+
+			backupReq := req.Clone(ctx.Request.Context())
+			backupReq.URL.Scheme = parsedBackup.Scheme
+			backupReq.URL.Host = parsedBackup.Host
+			backupReq.Host = parsedBackup.Host
+			backupReq.Header.Set("Referer", bURL)
+
+			log.Printf("[iptv-proxy] Upstream %s failed/down (err=%v); attempting failover to backup URL %s...", currentHost, err, bURL)
+			bResp, bErr := client.Do(backupReq)
+			if bErr == nil && bResp.StatusCode < 500 {
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
+				log.Printf("[iptv-proxy] Failover to %s successful! Auto-rotating active provider URL.", bURL)
+				c.RotateToURL(bURL)
+				return bResp, nil
+			}
+			if bResp != nil && bResp.Body != nil {
+				bResp.Body.Close()
+			}
+		}
+	}
+
 	if err == nil {
 		return resp, nil
 	}

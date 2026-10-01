@@ -757,6 +757,36 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	}
 
 	resp, err := client.Do(req)
+	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+		backupURLs := c.GetAllProviderURLs()
+		if len(backupURLs) > 1 {
+			for _, bURL := range backupURLs {
+				parsedB, errB := url.Parse(bURL)
+				if errB != nil || parsedB.Host == req.URL.Host {
+					continue
+				}
+				bReq := req.Clone(ctx.Request.Context())
+				bReq.URL.Scheme = parsedB.Scheme
+				bReq.URL.Host = parsedB.Host
+				bReq.Host = parsedB.Host
+				bReq.Header.Set("Referer", bURL)
+
+				bResp, bErr := client.Do(bReq)
+				if bErr == nil && bResp.StatusCode < 500 {
+					if resp != nil && resp.Body != nil {
+						resp.Body.Close()
+					}
+					resp = bResp
+					err = nil
+					c.RotateToURL(bURL)
+					break
+				}
+				if bResp != nil && bResp.Body != nil {
+					bResp.Body.Close()
+				}
+			}
+		}
+	}
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return

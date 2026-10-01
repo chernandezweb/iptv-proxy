@@ -111,6 +111,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 
 	provData := cfg.ProxyConfig.Provider.GetData()
 	cfg.ProxyConfig.XtreamBaseURL = provData.XtreamBaseURL
+	cfg.ProxyConfig.BackupURLs = provData.BackupURLs
 	cfg.ProxyConfig.XtreamUser = config.CredentialString(provData.XtreamUser)
 	cfg.ProxyConfig.XtreamPassword = config.CredentialString(provData.XtreamPassword)
 	cfg.ProxyConfig.Referer = provData.Referer
@@ -260,3 +261,60 @@ func newUpstreamHTTPClient(cfg *Config) *http.Client {
 		Timeout:   0,
 	}
 }
+
+// GetAllProviderURLs returns all configured URLs (active URL followed by backup URLs).
+func (c *Config) GetAllProviderURLs() []string {
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		return c.ProxyConfig.Provider.GetAllURLs()
+	}
+	if c.XtreamBaseURL != "" {
+		return []string{c.XtreamBaseURL}
+	}
+	return nil
+}
+
+// RotateToURL switches the active provider URL to newURL, updates referer, baseStreamURL, and flushes caches.
+func (c *Config) RotateToURL(newURL string) {
+	newClean := strings.TrimRight(strings.TrimSpace(newURL), "/")
+	if newClean == "" || newClean == c.XtreamBaseURL {
+		return
+	}
+
+	log.Printf("[iptv-proxy] Failover triggered: switching provider base URL from %q to %q", c.XtreamBaseURL, newClean)
+	c.XtreamBaseURL = newClean
+	c.Referer = newClean
+	c.ProxyConfig.XtreamBaseURL = newClean
+	c.ProxyConfig.Referer = newClean
+
+	if u, err := url.Parse(newClean); err == nil {
+		c.baseStreamURL = u
+	}
+
+	if c.ProxyConfig.Provider != nil {
+		if err := c.ProxyConfig.Provider.SetActiveURL(newClean); err != nil {
+			log.Printf("[iptv-proxy] Error persisting rotated active URL: %v", err)
+		}
+		c.ProxyConfig.BackupURLs = c.ProxyConfig.Provider.GetData().BackupURLs
+	}
+
+	if c.metadataCache != nil {
+		c.metadataCache.Clear()
+	}
+	if c.xmltvCache != nil {
+		c.xmltvCache.Clear()
+	}
+}
+
+// ReplaceBaseURL replaces scheme and host of a given target URL with the newBaseURL.
+func (c *Config) ReplaceBaseURL(targetURL *url.URL, newBaseURL string) (*url.URL, error) {
+	parsedBase, err := url.Parse(strings.TrimRight(newBaseURL, "/"))
+	if err != nil {
+		return nil, err
+	}
+
+	res := *targetURL
+	res.Scheme = parsedBase.Scheme
+	res.Host = parsedBase.Host
+	return &res, nil
+}
+

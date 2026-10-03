@@ -227,9 +227,6 @@ When active, requests to your IPTV provider originate from NordVPN's IP rather t
 ### 3. Upstream Provider Returns 403 Forbidden
 Some IPTV providers block standard HTTP clients or specific User-Agents. Set `USER_AGENT: "IPTVSmartersPro"` or `"TiviMate/4.7.0 (Android TV)"` in `docker-compose.yml`.
 
-### 4. Adult movies still appear in search after unchecking the category?
-1. Ensure the container has the latest updates.
-2. In your IPTV player app (such as Televizo), tap **Reload Playlist** or clear playlist cache so the player updates its local search index.
 
 ---
 

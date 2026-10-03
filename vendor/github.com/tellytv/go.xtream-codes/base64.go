@@ -40,19 +40,46 @@ func (bv *Base64Value) String() string {
 	return base64.RawURLEncoding.EncodeToString(*bv)
 }
 
-// UnmarshalJSON sets bv to the bytes represented in the base64url encoding b.
+// UnmarshalJSON sets bv to the bytes represented in base64 (supporting Std, URL, and raw string formats).
 func (bv *Base64Value) UnmarshalJSON(b []byte) error {
 	if len(b) < 2 || b[0] != byte('"') || b[len(b)-1] != byte('"') {
 		return errors.New("value is not a string")
 	}
 
-	out := make([]byte, base64.RawURLEncoding.DecodedLen(len(b)-2))
-	n, err := base64.RawURLEncoding.Decode(out, b[1:len(b)-1])
-	if err != nil {
-		return err
+	raw := b[1 : len(b)-1]
+	if len(raw) == 0 {
+		return nil
 	}
 
+	// Try standard base64 (with padding)
+	out := make([]byte, base64.StdEncoding.DecodedLen(len(raw)))
+	n, err := base64.StdEncoding.Decode(out, raw)
+	if err == nil {
+		v := reflect.ValueOf(bv).Elem()
+		v.SetBytes(out[:n])
+		return nil
+	}
+
+	// Try URL-safe raw base64
+	out = make([]byte, base64.RawURLEncoding.DecodedLen(len(raw)))
+	n, err = base64.RawURLEncoding.Decode(out, raw)
+	if err == nil {
+		v := reflect.ValueOf(bv).Elem()
+		v.SetBytes(out[:n])
+		return nil
+	}
+
+	// Try standard raw base64 (no padding)
+	out = make([]byte, base64.RawStdEncoding.DecodedLen(len(raw)))
+	n, err = base64.RawStdEncoding.Decode(out, raw)
+	if err == nil {
+		v := reflect.ValueOf(bv).Elem()
+		v.SetBytes(out[:n])
+		return nil
+	}
+
+	// Fallback to literal plain text string if upstream provided unencoded string
 	v := reflect.ValueOf(bv).Elem()
-	v.SetBytes(out[:n])
+	v.SetBytes(raw)
 	return nil
 }

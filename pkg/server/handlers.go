@@ -131,9 +131,10 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 		return
 	}
 
-	// For HLS .ts chunks, cache in memory to serve other devices watching the same channel
+	// For HLS .ts chunks, cache in memory to serve other devices watching the same channel.
+	// Only cache individual discrete chunks (e.g. 414069_1085.ts), NEVER infinite live MPEG-TS streams (e.g. 414066.ts).
 	chunkName := path.Base(oriURL.Path)
-	if c.chunkCache != nil && strings.HasSuffix(chunkName, ".ts") && resp.StatusCode == http.StatusOK {
+	if c.chunkCache != nil && strings.HasSuffix(chunkName, ".ts") && strings.Contains(chunkName, "_") && resp.StatusCode == http.StatusOK {
 		var cacheBuf bytes.Buffer
 		tee := io.TeeReader(resp.Body, &cacheBuf)
 		mergeHttpHeader(ctx.Writer.Header(), resp.Header)

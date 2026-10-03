@@ -11,6 +11,8 @@ services:
     volumes:
       # Persistent storage for provider.json, users.json, and filters.json across restarts & updates
       - ./data:/data
+      # Mount Docker socket to enable 1-Click Update from the Web Admin dashboard
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       PORT: 8080
       DATA_DIR: "/data"

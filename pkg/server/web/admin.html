@@ -2768,18 +2768,37 @@
                     ${data.latest_date ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">Published: ${new Date(data.latest_date).toLocaleString()}</div>` : ''}
                 </div>
 
-                <div style="margin-bottom:0.75rem; font-size:0.875rem; font-weight:600; color:var(--text);">
-                    To apply the latest update on your VPS:
+                ${data.docker_socket ? `
+                    <div style="margin-bottom:1.25rem;">
+                        <button type="button" class="btn" id="run1ClickUpdateBtn" onclick="trigger1ClickUpdate()" style="width:100%; padding:0.85rem; font-size:1rem; font-weight:700; justify-content:center;">
+                            🚀 Update Now (Git Pull &amp; Rebuild)
+                        </button>
+                        <div style="font-size:0.75rem; color:var(--text-muted); text-align:center; margin-top:0.35rem;">
+                            1-Click update is enabled via Docker socket. Rebuild takes ~30 seconds with automatic page reload.
+                        </div>
+                    </div>
+                ` : `
+                    <div style="margin-bottom:1.25rem;">
+                        <button type="button" class="btn btn-secondary" onclick="copyUpdateCommand()" style="width:100%; padding:0.75rem; justify-content:center;">
+                            📋 Copy Update Command
+                        </button>
+                        <div style="font-size:0.75rem; color:var(--text-muted); text-align:center; margin-top:0.35rem;">
+                            Mount <code>/var/run/docker.sock:/var/run/docker.sock</code> in docker-compose.yml to enable the 1-Click Update button.
+                        </div>
+                    </div>
+                `}
+
+                <div style="margin-bottom:0.5rem; font-size:0.875rem; font-weight:600; color:var(--text);">
+                    Manual command on your VPS:
                 </div>
-                <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.85rem; font-family:monospace; font-size:0.825rem; color:#38bdf8; word-break:break-all;">
+                <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.75rem; font-family:monospace; font-size:0.8rem; color:#38bdf8; word-break:break-all;">
                     ${escapeHtml(latestUpdateCommand)}
                 </div>
 
-                <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:0.85rem; margin-top:1rem; font-size:0.8rem; color:#cbd5e1;">
-                    💡 <strong>Automated Updates Note:</strong> Because all your settings, providers, accounts, and filters live in <code>./data/</code>, running an update will <strong>never overwrite or lose your settings</strong>.
+                <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:0.75rem; margin-top:1rem; font-size:0.8rem; color:#cbd5e1;">
+                    💡 <strong>Safe Updates:</strong> All your providers, accounts, and filters live in <code>./data/</code> and are never touched or lost during updates.
                 </div>
             `;
-            copyBtn.style.display = 'inline-flex';
         } catch (e) {
             body.innerHTML = `
                 <div style="color:var(--danger); padding:1rem; text-align:center;">
@@ -2803,6 +2822,112 @@
         } else {
             fallbackCopyText(latestUpdateCommand);
         }
+    }
+
+    async function trigger1ClickUpdate() {
+        if (!confirm('Are you sure you want to update IPTV Proxy now?\n\nThe proxy will pull the latest code from GitHub and rebuild the Docker container in the background. This takes ~30-40 seconds.')) {
+            return;
+        }
+
+        const body = document.getElementById('updateModalBody');
+        const copyBtn = document.getElementById('copyUpdateCmdBtn');
+        if (copyBtn) copyBtn.style.display = 'none';
+
+        body.innerHTML = `
+            <div style="text-align:center; padding:1.5rem 0.5rem;">
+                <div class="spinner" style="width:48px; height:48px; margin:0 auto 1.25rem auto; border-width:4px;"></div>
+                <h4 style="margin:0 0 0.5rem 0; font-size:1.15rem; font-weight:700; color:var(--text);" id="updateStatusTitle">
+                    🚀 Updating IPTV Proxy...
+                </h4>
+                <p style="color:var(--text-muted); font-size:0.875rem; margin:0 0 1.25rem 0; line-height:1.5;" id="updateStatusDesc">
+                    Pulling latest code from GitHub and rebuilding Docker container...
+                </p>
+
+                <div style="background:var(--bg-card-subtle); border-radius:8px; height:10px; width:100%; overflow:hidden; margin-bottom:0.75rem; border:1px solid var(--border);">
+                    <div id="updateProgressBar" style="height:100%; width:15%; background:var(--primary); transition:width 1s ease;"></div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted);">
+                    <span id="updateElapsed">Elapsed: 0s</span>
+                    <span id="updateEta">Est. remaining: ~35s</span>
+                </div>
+            </div>
+        `;
+
+        try {
+            const res = await fetch('/admin/api/update', { method: 'POST' });
+            const data = await res.json();
+
+            if (!data.supported || !res.ok) {
+                body.innerHTML = `
+                    <div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:1rem; margin-bottom:1rem; color:#fca5a5; font-size:0.875rem;">
+                        <strong>⚠️ 1-Click Update Error:</strong><br>
+                        ${escapeHtml(data.error || 'Failed to trigger update')}
+                    </div>
+                    <div style="margin-bottom:0.5rem; font-size:0.875rem; font-weight:600; color:var(--text);">
+                        You can update manually by running this command on your VPS:
+                    </div>
+                    <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.75rem; font-family:monospace; font-size:0.8rem; color:#38bdf8; word-break:break-all;">
+                        ${escapeHtml(data.command || latestUpdateCommand)}
+                    </div>
+                `;
+                return;
+            }
+
+            pollUpdateProgress();
+        } catch (e) {
+            pollUpdateProgress();
+        }
+    }
+
+    function pollUpdateProgress() {
+        const title = document.getElementById('updateStatusTitle');
+        const desc = document.getElementById('updateStatusDesc');
+        const bar = document.getElementById('updateProgressBar');
+        const elapsedSpan = document.getElementById('updateElapsed');
+        const etaSpan = document.getElementById('updateEta');
+
+        let elapsed = 0;
+        const totalEstimated = 35;
+        let onlineDetected = false;
+
+        const interval = setInterval(async () => {
+            elapsed++;
+            if (elapsedSpan) elapsedSpan.textContent = `Elapsed: ${elapsed}s`;
+
+            const pct = Math.min(95, Math.round((elapsed / totalEstimated) * 90) + 10);
+            if (bar) bar.style.width = pct + '%';
+
+            const remaining = Math.max(0, totalEstimated - elapsed);
+            if (etaSpan) etaSpan.textContent = remaining > 0 ? `Est. remaining: ~${remaining}s` : 'Finalizing restart...';
+
+            if (elapsed >= 10) {
+                try {
+                    const testRes = await fetch('/admin/api/version', { cache: 'no-store' });
+                    if (testRes.ok) {
+                        const testData = await testRes.json();
+                        clearInterval(interval);
+                        onlineDetected = true;
+                        if (bar) bar.style.width = '100%';
+                        if (title) title.innerHTML = '✅ Update Succeeded!';
+                        if (desc) desc.textContent = 'IPTV Proxy has restarted with the newest version. Reloading interface...';
+                        showToast('✅ IPTV Proxy updated successfully!', 'success');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1800);
+                        return;
+                    }
+                } catch (err) {
+                    // Container restarting, continue polling
+                }
+            }
+
+            if (elapsed >= 90 && !onlineDetected) {
+                clearInterval(interval);
+                if (title) title.innerHTML = '⏳ Rebuild Taking Longer...';
+                if (desc) desc.innerHTML = 'The rebuild is still in progress on your VPS. Please wait a moment and <a href="javascript:location.reload()" style="color:var(--primary); text-decoration:underline;">refresh the page</a>.';
+            }
+        }, 1000);
     }
 
     function fallbackCopyText(text) {

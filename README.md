@@ -224,8 +224,15 @@ Some IPTV providers block standard HTTP clients or specific User-Agents. Set `US
      ```
    * **Cloud Provider Web Console:** Check your VPS provider's portal (AWS Security Groups, Oracle Ingress Rules, Google Cloud Firewall, Hetzner Firewall) to ensure port `8080` (TCP) is allowed for inbound traffic from `0.0.0.0/0`.
 
-### 5. Safe Git Updates Without Merge Conflicts
-* **Your settings are 100% safe:** All IPTV providers, users, passwords, NordVPN settings, and filters are stored in `./data/` (`provider.json`, `users.json`, `filters.json`). Git **never** touches the `./data/` folder during updates!
+### 5. 1-Click Web Admin & Safe Git Updates
+* **🚀 1-Click Update from Web Admin:** Simply click the **⬆️ Updates** button in the dashboard header and press **`🚀 Update Now`**. The proxy automatically pulls the latest master code from GitHub, rebuilds the Docker container in the background, and refreshes the browser when complete (~35s).
+* **💻 Manual Update via Terminal (Optional):**
+  ```bash
+  cd ~/iptv-proxy
+  git pull origin master
+  docker compose up -d --build
+  ```
+* **🛡️ Your settings are 100% safe:** All IPTV providers, users, passwords, NordVPN proxy settings, and filters are stored in `./data/` (`provider.json`, `users.json`, `filters.json`). Git and Docker rebuilds **never** touch or overwrite the `./data/` folder!
 * **If git pull says `untracked file docker-compose.yml would be overwritten` (for older installs):**
   ```bash
   cp docker-compose.yml docker-compose.yml.bak
@@ -236,7 +243,7 @@ Some IPTV providers block standard HTTP clients or specific User-Agents. Set `US
   docker compose up -d --build
   ```
 * **Customizing Ports without modifying tracked files:**
-  You can create an optional `.env` file (e.g. `PORT=9000`) or a `docker-compose.override.yml`. Both are ignored by Git, ensuring future `git pull` commands run smoothly with zero conflicts.
+  You can create an optional `.env` file (e.g. `PORT=9000`) or a `docker-compose.override.yml`. Both are ignored by Git, ensuring updates run smoothly with zero conflicts.
 
 ---
 

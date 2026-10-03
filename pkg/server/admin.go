@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -8,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +47,7 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
 	admin.GET("/api/version", c.adminGetVersion)
+	admin.POST("/api/update", c.adminTriggerUpdate)
 
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
@@ -941,6 +946,164 @@ func (c *Config) adminGetVersion(ctx *gin.Context) {
 		"latest_message": msgFirstLine,
 		"latest_date":    gh.Commit.Author.Date,
 		"update_command": "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		"docker_socket":  dockerSocketExists(),
+	})
+}
+
+func dockerSocketExists() bool {
+	_, err := os.Stat("/var/run/docker.sock")
+	return err == nil
+}
+
+func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
+	if !dockerSocketExists() {
+		ctx.JSON(http.StatusOK, gin.H{
+			"supported": false,
+			"error":     "Docker socket (/var/run/docker.sock) is not mounted into container. Add '/var/run/docker.sock:/var/run/docker.sock' to volumes in docker-compose.yml to enable 1-click update.",
+			"command":   "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		})
+		return
+	}
+
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, proto, addr string) (net.Conn, error) {
+			return net.Dial("unix", "/var/run/docker.sock")
+		},
+	}
+	client := &http.Client{Transport: tr, Timeout: 30 * time.Second}
+
+	// Clean up any stale updater container from earlier runs
+	delReq, _ := http.NewRequest("DELETE", "http://localhost/v1.40/containers/iptv_proxy_updater?force=true", nil)
+	if delResp, err := client.Do(delReq); err == nil {
+		delResp.Body.Close()
+	}
+
+	// Discover host repo path by inspecting container mounts for /data
+	var repoCandidates []string
+	inspResp, err := client.Get("http://localhost/v1.40/containers/iptv-proxy/json")
+	if err == nil && inspResp.StatusCode == http.StatusOK {
+		var insp struct {
+			Mounts []struct {
+				Source      string `json:"Source"`
+				Destination string `json:"Destination"`
+			} `json:"Mounts"`
+		}
+		if json.NewDecoder(inspResp.Body).Decode(&insp) == nil {
+			for _, m := range insp.Mounts {
+				if m.Destination == "/data" && m.Source != "" {
+					dir := filepath.Dir(m.Source)
+					if dir != "" && dir != "/" {
+						repoCandidates = append(repoCandidates, dir)
+					}
+					break
+				}
+			}
+		}
+		inspResp.Body.Close()
+	}
+
+	repoCandidates = append(repoCandidates,
+		"/root/iptv-proxy",
+		"~/iptv-proxy",
+		"/home/*/iptv-proxy",
+		"/var/www/iptv-proxy",
+		"/opt/iptv-proxy",
+	)
+
+	searchPaths := strings.Join(repoCandidates, " ")
+
+	script := fmt.Sprintf(`export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+for p in %s; do
+  if [ -d "$p/.git" ]; then
+    cd "$p" || continue
+    git pull origin master
+    if command -v docker >/dev/null 2>&1; then
+      docker compose up -d --build || docker-compose up -d --build
+    fi
+    exit 0
+  fi
+done
+exit 1`, searchPaths)
+
+	createReq := map[string]interface{}{
+		"Image": "alpine:3",
+		"Cmd": []string{
+			"sh", "-c",
+			fmt.Sprintf("chroot /host sh -c %s", strconv.Quote(script)),
+		},
+		"HostConfig": map[string]interface{}{
+			"Binds": []string{
+				"/:/host:rw",
+				"/var/run/docker.sock:/var/run/docker.sock",
+			},
+			"Privileged": true,
+			"AutoRemove": true,
+		},
+	}
+
+	bodyBytes, _ := json.Marshal(createReq)
+	resp, err := client.Post("http://localhost/v1.40/containers/create?name=iptv_proxy_updater", "application/json", bytes.NewReader(bodyBytes))
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"supported": false,
+			"error":     "Failed to contact Docker socket: " + err.Error(),
+			"command":   "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	// If alpine:3 is not present in local cache, pull it and retry
+	if resp.StatusCode == http.StatusNotFound {
+		pullResp, pErr := client.Post("http://localhost/v1.40/images/create?fromImage=alpine:3", "application/json", nil)
+		if pErr == nil {
+			pullResp.Body.Close()
+			resp2, err2 := client.Post("http://localhost/v1.40/containers/create?name=iptv_proxy_updater", "application/json", bytes.NewReader(bodyBytes))
+			if err2 == nil {
+				resp = resp2
+				defer resp.Body.Close()
+			}
+		}
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"supported": false,
+			"error":     fmt.Sprintf("Docker returned HTTP %d: %s", resp.StatusCode, string(respBody)),
+			"command":   "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		})
+		return
+	}
+
+	var createResp struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&createResp); err != nil || createResp.ID == "" {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"supported": false,
+			"error":     "Failed parsing container ID from Docker response",
+			"command":   "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		})
+		return
+	}
+
+	// Start the updater container
+	startResp, err := client.Post(fmt.Sprintf("http://localhost/v1.40/containers/%s/start", createResp.ID), "application/json", nil)
+	if err != nil || (startResp.StatusCode != http.StatusOK && startResp.StatusCode != http.StatusNoContent) {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"supported": false,
+			"error":     "Created updater container but failed to start it",
+			"command":   "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		})
+		return
+	}
+	defer startResp.Body.Close()
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"supported": true,
+		"status":    "started",
+		"message":   "1-Click update started successfully! Pulling latest code and rebuilding container...",
 	})
 }
 

@@ -20,3 +20,4 @@ services:
       # Initial fallback credentials (can also be customized in .env or Web UI -> Users)
       USER: "${USER:-admin}"
       PASSWORD: "${PASSWORD:-admin}"
+      HOSTNAME: "${HOSTNAME:-}"

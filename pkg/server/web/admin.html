@@ -1440,6 +1440,29 @@
             </div>
         </div>
 
+        <!-- Streaming Engine Mode Card -->
+        <div class="pool-card" style="margin-top:0; margin-bottom:1.5rem; border:1px solid var(--border); background:var(--bg-card-subtle);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1.25rem;">
+                <div style="max-width:680px;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.35rem;">
+                        <span style="font-size:1.25rem;">⚡</span>
+                        <strong style="font-size:1.05rem; color:var(--text);">Live Streaming Mode:</strong>
+                        <span id="streamModeBadge" class="url-pill online" style="background:var(--success-bg); color:var(--success); font-weight:600;">Direct 1:1 (TiviMate Optimized)</span>
+                    </div>
+                    <p style="margin:0; font-size:0.875rem; color:var(--text-muted); line-height:1.5;">
+                        <strong style="color:#cbd5e1;">Direct 1:1 Mode (Default &amp; Recommended):</strong> Pure zero-buffer pass-through. Delivers 100% instant, uninterrupted playback on TiviMate, ExoPlayer, Televizo, VLC, and IPTV Smarters with pristine MPEG-TS headers.<br>
+                        <strong style="color:#cbd5e1;">Shared Stream Relay:</strong> Multiple devices watching the same live channel share a single upstream connection. Enable this if you want to conserve connections on limited provider accounts.
+                    </p>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.75rem; background:var(--bg-input); padding:0.6rem 1rem; border-radius:var(--radius); border:1px solid var(--border);">
+                    <label class="switch-toggle" style="font-size:0.9rem; font-weight:600; cursor:pointer;">
+                        <input type="checkbox" id="streamRelayToggle" onchange="toggleStreamRelayMode()">
+                        <span id="streamRelayLabel">Shared Relay (OFF)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <!-- Metrics cards -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
             <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
@@ -1455,9 +1478,9 @@
                 <div id="statSavedConns" style="font-size:1.75rem; font-weight:700; color:#38bdf8; margin-top:0.35rem;">0</div>
             </div>
             <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">TS Packet Alignment</div>
-                <div style="font-size:1.05rem; font-weight:600; color:var(--success); margin-top:0.6rem; display:flex; align-items:center; gap:0.4rem;">
-                    <span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> 188-byte MPEG-TS
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Streaming Engine</div>
+                <div id="statStreamEngine" style="font-size:1.05rem; font-weight:600; color:var(--success); margin-top:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+                    <span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> Direct 1:1 Pass-Through
                 </div>
             </div>
         </div>
@@ -2656,7 +2679,8 @@
             const saved = Math.max(0, (data.total_viewers || 0) - (data.total_relays || 0));
             document.getElementById('statSavedConns').innerText = saved;
 
-            renderStreams();
+            updateStreamRelayUI(data.relay_enabled);
+            renderStreams(data.relay_enabled);
         } catch (e) {
             console.error('Error loading streams:', e);
             document.getElementById('streamsListContainer').innerHTML = `
@@ -2667,14 +2691,73 @@
         }
     }
 
-    function renderStreams() {
+    function updateStreamRelayUI(enabled) {
+        const toggle = document.getElementById('streamRelayToggle');
+        const label = document.getElementById('streamRelayLabel');
+        const badge = document.getElementById('streamModeBadge');
+        const engine = document.getElementById('statStreamEngine');
+        
+        if (toggle) toggle.checked = !!enabled;
+        if (label) label.innerText = enabled ? 'Shared Relay (ON)' : 'Shared Relay (OFF)';
+        if (badge) {
+            if (enabled) {
+                badge.innerText = 'Shared Relay Active';
+                badge.style.background = 'rgba(99, 102, 241, 0.15)';
+                badge.style.color = '#818cf8';
+            } else {
+                badge.innerText = 'Direct 1:1 (TiviMate Optimized)';
+                badge.style.background = 'var(--success-bg)';
+                badge.style.color = 'var(--success)';
+            }
+        }
+        if (engine) {
+            if (enabled) {
+                engine.innerHTML = '<span class="status-dot" style="background:var(--primary); width:9px; height:9px;"></span> Shared Multiplexer';
+                engine.style.color = 'var(--primary)';
+            } else {
+                engine.innerHTML = '<span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> Direct 1:1 Pass-Through';
+                engine.style.color = 'var(--success)';
+            }
+        }
+    }
+
+    async function toggleStreamRelayMode() {
+        const toggle = document.getElementById('streamRelayToggle');
+        const enabled = toggle.checked;
+        try {
+            const res = await fetch('/admin/api/stream-relay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Stream mode updated', 'success');
+                updateStreamRelayUI(enabled);
+                loadStreams();
+            } else {
+                toggle.checked = !enabled;
+                showToast(data.error || 'Failed to update streaming mode', 'error');
+            }
+        } catch (e) {
+            toggle.checked = !enabled;
+            showToast('Network error: ' + e.message, 'error');
+        }
+    }
+
+    function renderStreams(relayEnabled) {
         const container = document.getElementById('streamsListContainer');
         if (!state.streams || state.streams.length === 0) {
+            const desc = relayEnabled 
+                ? 'When connected IPTV apps play the same live channel, it is automatically captured, 188-byte packet aligned, and multiplexed here to save upstream provider connections.'
+                : 'Direct 1:1 Pass-Through mode is active. Streams are piped directly to upstream providers with zero latency, zero packet loss, and full TiviMate / ExoPlayer compatibility.';
             container.innerHTML = `
                 <div style="padding:3rem 1.5rem; text-align:center; background:var(--bg-card-subtle); border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted);">
-                    <div style="font-size:2rem; margin-bottom:0.75rem;">📡</div>
-                    <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">No Live Channels Currently Streaming</div>
-                    <p style="margin:0; font-size:0.9rem;">When any connected IPTV app plays a live channel, it is automatically captured, 188-byte packet aligned, and multiplexed here.</p>
+                    <div style="font-size:2rem; margin-bottom:0.75rem;">${relayEnabled ? '📡' : '⚡'}</div>
+                    <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">
+                        ${relayEnabled ? 'No Live Channels Currently Multiplexed' : 'Direct 1:1 Streaming Active'}
+                    </div>
+                    <p style="margin:0; font-size:0.9rem; max-width:600px; margin:0 auto;">${desc}</p>
                 </div>
             `;
             return;

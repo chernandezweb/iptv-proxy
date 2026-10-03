@@ -101,6 +101,8 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/users", c.adminSaveUsers)
 	admin.DELETE("/api/users/:id", c.adminDeleteUser)
 	admin.GET("/api/streams", c.adminGetStreams)
+	admin.GET("/api/stream-relay", c.adminGetStreamRelay)
+	admin.POST("/api/stream-relay", c.adminSaveStreamRelay)
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
@@ -858,6 +860,48 @@ func (c *Config) adminGetStreams(ctx *gin.Context) {
 		"user_slots":    userSlots,
 		"total_relays":  len(relays),
 		"total_viewers": totalViewers,
+		"relay_enabled": c.IsSharedStreamEnabled(),
+	})
+}
+
+func (c *Config) adminGetStreamRelay(ctx *gin.Context) {
+	enabled := c.IsSharedStreamEnabled()
+	mode := "direct"
+	if enabled {
+		mode = "shared"
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"enabled": enabled,
+		"mode":    mode,
+	})
+}
+
+func (c *Config) adminSaveStreamRelay(ctx *gin.Context) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		if err := c.ProxyConfig.Provider.SetStreamRelayEnabled(req.Enabled); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save stream relay setting: " + err.Error()})
+			return
+		}
+	}
+
+	modeStr := "Direct 1:1 Streaming (Rock-solid for TiviMate, ExoPlayer & VLC)"
+	if req.Enabled {
+		modeStr = "Shared Stream Relay Multiplexer (Bandwidth & upstream connection saver)"
+	}
+	log.Printf("[iptv-proxy] Live streaming mode switched to: %s", modeStr)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"enabled": req.Enabled,
+		"message": fmt.Sprintf("Stream mode switched to: %s", modeStr),
 	})
 }
 

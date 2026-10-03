@@ -78,9 +78,10 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 	requestRangeHeader := ctx.Request.Header.Get("Range")
 	forwardRange := requestRangeHeader != ""
 
-	// Check if this stream can be multiplexed through the shared stream hub (live broadcasts)
+	// Check if this stream can be multiplexed through the shared stream hub (live broadcasts).
+	// By default, direct 1:1 streaming mode is used for rock-solid compatibility with TiviMate, ExoPlayer, and VLC.
 	isLiveBroadcast := !forwardRange && (strings.Contains(oriURL.Path, ".ts") || strings.Contains(ctx.Request.URL.Path, "/live/") || (!strings.Contains(oriURL.Path, "/movie/") && !strings.Contains(oriURL.Path, "/series/")))
-	if c.streamHub != nil && isLiveBroadcast {
+	if c.streamHub != nil && isLiveBroadcast && c.IsSharedStreamEnabled() {
 		if c.streamHub.TryPlaySharedStream(ctx, c, client, oriURL) {
 			return
 		}

@@ -585,3 +585,10 @@ func (c *Config) GetEnabledProvidersOrFallback() []config.ProviderItem {
 	return enabled
 }
 
+// IsSharedStreamEnabled checks whether shared stream relay multiplexing is enabled in provider settings.
+func (c *Config) IsSharedStreamEnabled() bool {
+	if c != nil && c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		return c.ProxyConfig.Provider.IsStreamRelayEnabled()
+	}
+	return false
+}

@@ -1344,9 +1344,14 @@ exit 1`, searchPaths)
 		"Image":      imageToUse,
 		"Entrypoint": []string{"sh", "-c"},
 		"Cmd": []string{
-			fmt.Sprintf("chroot /host sh -c %s", strconv.Quote(script)),
+			fmt.Sprintf(`if command -v nsenter >/dev/null 2>&1; then
+  nsenter -t 1 -m -u -n -i -p -- sh -c %s
+else
+  chroot /host sh -c %s
+fi`, strconv.Quote(script), strconv.Quote("mount -t proc proc /proc 2>/dev/null || true; " + script)),
 		},
 		"HostConfig": map[string]interface{}{
+			"PidMode": "host",
 			"Binds": []string{
 				"/:/host:rw",
 				"/var/run/docker.sock:/var/run/docker.sock",

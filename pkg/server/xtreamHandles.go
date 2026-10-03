@@ -927,7 +927,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 			}
 		}
 
-	case "get_short_epg", "get_simple_data_table":
+	case "get_short_epg", "get_simple_data_table", "get_simple_date_table":
 		streamID := ""
 		if len(q["stream_id"]) > 0 {
 			streamID = q["stream_id"][0]
@@ -1184,6 +1184,7 @@ func (c *Config) xtreamStreamSeries(ctx *gin.Context) {
 
 func (c *Config) xtreamHlsStream(ctx *gin.Context) {
 	chunk := ctx.Param("chunk")
+	token := ctx.Param("token")
 	s := strings.Split(chunk, "_")
 	if len(s) != 2 {
 		ctx.AbortWithError( // nolint: errcheck
@@ -1194,7 +1195,23 @@ func (c *Config) xtreamHlsStream(ctx *gin.Context) {
 	}
 	channel := s[0]
 
-	url, err := getHlsRedirectURL(channel)
+	// 1. Serve from RAM cache if another device already fetched this segment
+	if c.chunkCache != nil {
+		if cachedData, cType, found := c.chunkCache.Get(chunk); found {
+			ctx.Header("Access-Control-Allow-Origin", "*")
+			ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			ctx.Header("Access-Control-Allow-Headers", "*")
+			ctx.Header("X-Proxy-Cache", "HIT")
+			if cType == "" {
+				cType = "video/mp2t"
+			}
+			ctx.Data(http.StatusOK, cType, cachedData)
+			return
+		}
+	}
+
+	// 2. Resolve redirect URL: match token first to keep device on its own stream session
+	url, err := getHlsRedirectURL(token, channel)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -1205,8 +1222,8 @@ func (c *Config) xtreamHlsStream(ctx *gin.Context) {
 			"%s://%s/hls/%s/%s",
 			url.Scheme,
 			url.Host,
-			ctx.Param("token"),
-			ctx.Param("chunk"),
+			token,
+			chunk,
 		),
 	)
 
@@ -1220,8 +1237,24 @@ func (c *Config) xtreamHlsStream(ctx *gin.Context) {
 
 func (c *Config) xtreamHlsrStream(ctx *gin.Context) {
 	channel := ctx.Param("channel")
+	token := ctx.Param("token")
+	chunk := ctx.Param("chunk")
 
-	url, err := getHlsRedirectURL(channel)
+	if c.chunkCache != nil && chunk != "" {
+		if cachedData, cType, found := c.chunkCache.Get(chunk); found {
+			ctx.Header("Access-Control-Allow-Origin", "*")
+			ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			ctx.Header("Access-Control-Allow-Headers", "*")
+			ctx.Header("X-Proxy-Cache", "HIT")
+			if cType == "" {
+				cType = "video/mp2t"
+			}
+			ctx.Data(http.StatusOK, cType, cachedData)
+			return
+		}
+	}
+
+	url, err := getHlsRedirectURL(token, channel)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -1257,7 +1290,7 @@ func (c *Config) metadataCacheKey(action string, q url.Values) (string, bool) {
 	switch action {
 	case "get_live_categories", "get_vod_categories", "get_series_categories",
 		"get_live_streams", "get_vod_streams", "get_vod_info", "get_series",
-		"get_series_info", "get_short_epg", "get_simple_data_table":
+		"get_series_info", "get_short_epg", "get_simple_data_table", "get_simple_date_table":
 		return action + "|" + canonicalizeQuery(q), true
 	default:
 		return "", false
@@ -1297,9 +1330,16 @@ func canonicalizeQuery(q url.Values) string {
 	return b.String()
 }
 
-func getHlsRedirectURL(channel string) (*url.URL, error) {
+func getHlsRedirectURL(token, channel string) (*url.URL, error) {
 	hlsChannelsRedirectURLLock.RLock()
 	defer hlsChannelsRedirectURLLock.RUnlock()
+
+	// Prioritize token match to keep multi-device stream sessions separate
+	if token != "" {
+		if u, ok := hlsChannelsRedirectURL[token]; ok {
+			return &u, nil
+		}
+	}
 
 	url, ok := hlsChannelsRedirectURL[channel+".m3u8"]
 	if !ok {
@@ -1413,6 +1453,13 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		hlsChannelsRedirectURL[id] = *location
 		hlsChannelsRedirectURL[baseID] = *location
 		hlsChannelsRedirectURL[baseID+".m3u8"] = *location
+		// Index by token from location path if present
+		locParts := strings.Split(strings.Trim(location.Path, "/"), "/")
+		for _, part := range locParts {
+			if len(part) >= 16 && part != baseID {
+				hlsChannelsRedirectURL[part] = *location
+			}
+		}
 		hlsChannelsRedirectURLLock.Unlock()
 
 		chunkKey := location.String()
@@ -1455,6 +1502,18 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 
 		if isPlaylist {
 			body := c.rewriteM3U8Body(string(b), ctx, location)
+			// Map any chunk tokens in the playlist to this server location
+			for _, line := range strings.Split(string(b), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "/hls/") {
+					parts := strings.Split(strings.TrimPrefix(line, "/hls/"), "/")
+					if len(parts) >= 2 && parts[0] != "" {
+						hlsChannelsRedirectURLLock.Lock()
+						hlsChannelsRedirectURL[parts[0]] = *location
+						hlsChannelsRedirectURLLock.Unlock()
+					}
+				}
+			}
 			mergeHttpHeader(ctx.Writer.Header(), hlsResp.Header)
 			ctx.Header("Access-Control-Allow-Origin", "*")
 			ctx.Header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")

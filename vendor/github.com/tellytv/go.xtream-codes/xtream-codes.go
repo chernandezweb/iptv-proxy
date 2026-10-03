@@ -30,16 +30,16 @@ func getHTTPClient() *http.Client {
 	transport := &http.Transport{
 		Proxy: proxyFunc,
 		DialContext: (&net.Dialer{
-			Timeout:   15 * time.Second,
-			KeepAlive: 30 * time.Second,
+			Timeout:   10 * time.Second,
+			KeepAlive: 15 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     false,
-		MaxIdleConns:          512,
-		MaxIdleConnsPerHost:   64,
-		MaxConnsPerHost:       128,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   16,
+		MaxConnsPerHost:       32,
+		IdleConnTimeout:       25 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 20 * time.Second,
 	}
 	return &http.Client{
 		Transport: transport,
@@ -398,7 +398,20 @@ func (c *XtreamClient) sendRequest(action string, parameters url.Values) ([]byte
 
 	request = request.WithContext(c.Context)
 
-	response, httpErr := c.HTTP.Do(request)
+	var response *http.Response
+	for attempt := 1; attempt <= 3; attempt++ {
+		response, httpErr = c.HTTP.Do(request)
+		if httpErr == nil && response.StatusCode < 500 {
+			break
+		}
+		if response != nil && response.Body != nil {
+			response.Body.Close()
+		}
+		if tr, ok := c.HTTP.Transport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
+		time.Sleep(time.Duration(attempt*250) * time.Millisecond)
+	}
 	if httpErr != nil {
 		return nil, fmt.Errorf("cannot reach server. %v", httpErr)
 	}

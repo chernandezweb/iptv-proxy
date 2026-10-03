@@ -131,6 +131,25 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 		return
 	}
 
+	// For HLS .ts chunks, cache in memory to serve other devices watching the same channel
+	chunkName := path.Base(oriURL.Path)
+	if c.chunkCache != nil && strings.HasSuffix(chunkName, ".ts") && resp.StatusCode == http.StatusOK {
+		var cacheBuf bytes.Buffer
+		tee := io.TeeReader(resp.Body, &cacheBuf)
+		mergeHttpHeader(ctx.Writer.Header(), resp.Header)
+		ctx.Status(resp.StatusCode)
+		bufPtr := streamBufferPool.Get().(*[]byte)
+		defer streamBufferPool.Put(bufPtr)
+		ctx.Stream(func(w io.Writer) bool {
+			io.CopyBuffer(w, tee, *bufPtr)
+			return false
+		})
+		if cacheBuf.Len() > 0 && cacheBuf.Len() < 10*1024*1024 {
+			c.chunkCache.Set(chunkName, cacheBuf.Bytes(), resp.Header.Get("Content-Type"))
+		}
+		return
+	}
+
 	mergeHttpHeader(ctx.Writer.Header(), resp.Header)
 	ctx.Status(resp.StatusCode)
 	bufPtr := streamBufferPool.Get().(*[]byte)

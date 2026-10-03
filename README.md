@@ -1,36 +1,83 @@
-## SSH to vps
+# IPTV Proxy with Failover Pool, Category Filtering & NordVPN SOCKS5
+
+A high-performance IPTV proxy for **Xtream Codes** and **M3U** playlists with built-in multi-provider failover, category filtering (Live, VOD, Series), in-memory caching, NordVPN SOCKS5 proxy support, and a modern Web Admin UI.
+
+---
+
+## 🌟 Key Features
+
+* **Xtream Codes & M3U Compatible**: Works with Televizo, TiviMate, IPTnator, IPTV Smarters, VLC, and any player supporting Xtream Codes API or M3U playlists.
+* **NordVPN SOCKS5 Proxy**: Routes all upstream traffic through NordVPN SOCKS5 servers to bypass ISP blocks, throttling, and geo-restrictions without installing VPN software on the host.
+* **Dynamic Category Filtering**: Selectively include or exclude Live TV, Movies (VOD), and Series categories from the Web UI. Filtered categories are blocked from both category lists and bulk searches.
+* **Multi-Provider Failover Pool**: Aggregate multiple IPTV providers or backup server URLs into a single playlist with automatic health testing and failover.
+* **Persistent Storage**: Configuration files (`provider.json` and `filters.json`) are stored in a dedicated host-mounted volume that survives container restarts, updates, and rebuilds.
+* **Modern Web Admin Dashboard**: Manage providers, failover servers, and category filters from an intuitive web interface.
+* **Optimized Stream Proxying**: High-performance HTTP client with connection pooling, keep-alive reuse, and metadata caching for instant playlist loading.
+
+---
+
+## 🚀 Quick Start on a VPS (Debian / Ubuntu)
+
+### Step 1: Connect to your VPS
 ```bash
-ssh root@0.0.0.0.0
+ssh root@<YOUR_VPS_IP>
 ```
 
-## 1. Update the system and install prerequisites
-
-
-
+### Step 2: Install Docker and Git
 ```bash
 apt update && apt upgrade -y
-apt install -y docker.io docker-compose curl nano git jq
+apt install -y docker.io docker-compose curl git jq
+systemctl enable --now docker
 ```
 
-## 2. Make sure docker & docker-compose are running
-
+Verify Docker is installed:
 ```bash
-systemctl enable --now docker
 docker --version
 docker-compose --version
 ```
 
-## 3. Clone iptv proxy repo
-
+### Step 3: Clone the Repository
 ```bash
-git clone https://github.com/chernandezweb/iptv-proxy.git
+git clone https://github.com/chernandezweb/iptv-proxy.git ~/iptv-proxy
+cd ~/iptv-proxy
 ```
 
-## 4. Create provider logins
+---
 
-```bash
-sudo nano ~/iptv-proxy/docker-compose.yml
+## 🛡️ NordVPN SOCKS5 Setup (Optional but Recommended)
+
+Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoids ISP blocks or throttling.
+
+### 1. Get your NordVPN Service Credentials
+> **Important:** SOCKS5 does **NOT** use your standard NordVPN email/password. You must generate **Service Credentials**:
+1. Log in to your [Nord Account Dashboard](https://my.nordaccount.com/).
+2. Navigate to **Services** → **NordVPN** → **Manual setup** (or **Service credentials**).
+3. Copy your generated **Username** and **Password**.
+
+### 2. Available NordVPN SOCKS5 Servers
+Choose a server location closest to your IPTV provider or VPS:
+* `se.socks.nordhold.net:1080` (Sweden)
+* `nl.socks.nordhold.net:1080` (Netherlands)
+* `us.socks.nordhold.net:1080` (United States)
+* `de.socks.nordhold.net:1080` (Germany)
+* `ie.socks.nordhold.net:1080` (Ireland)
+
+Format for `docker-compose.yml`:
+```text
+socks5://<NORD_SERVICE_USERNAME>:<NORD_SERVICE_PASSWORD>@<SERVER_HOSTNAME>:1080
 ```
+
+---
+
+## ⚙️ Configuration (`docker-compose.yml`)
+
+Copy the template file to create your active `docker-compose.yml`:
+```bash
+cp docker-compose-template.yml docker-compose.yml
+nano docker-compose.yml
+```
+
+Here is a complete, production-ready configuration:
 
 ```yaml
 version: "3"
@@ -42,51 +89,172 @@ services:
     container_name: "iptv-proxy"
     restart: on-failure
     ports:
-      - 8080:8080
+      # Host:Container port. Change 8060 to whatever port you prefer on your VPS.
+      - 8060:8080
+    volumes:
+      # Persistent storage for provider.json and filters.json across all rebuilds
+      - ./data:/data
     environment:
-      # Port to expose the IPTVs endpoints
+      # Internal container port (must match the second number in ports)
       PORT: 8080
-      # Hostname or IP to expose the IPTVs endpoints (for machine not for docker)
-      HOSTNAME: "0.0.0.0" # change for ipof the server proxy
+
+      # Storage directory for persistent configurations
+      DATA_DIR: "/data"
+
+      # Public IP or domain of your VPS (used to construct stream URLs)
+      HOSTNAME: "YOUR_VPS_IP"
+
+      # Gin web framework mode
       GIN_MODE: release
-      USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      REFERER: "http://....com" # change for iptv provider domain
+
+      # Upstream User-Agent masquerading (avoids player blocks from IPTV providers)
+      USER_AGENT: "IPTVSmartersPro"
+
+      # Upstream Referer domain (leave empty or set to provider domain)
+      REFERER: "http://your-provider-domain.com"
+
+      # Upstream timeout in milliseconds
       TIMEOUT: 30000
-      ## Xtream-code proxy configuration
-      XTREAM_USER: username  # change for iptv provider username
-      XTREAM_PASSWORD: password  # change for iptv provider password
-      XTREAM_BASE_URL: "http://....com" # change for iptv provider domain
-      USER: my_custom_username  # change for custom username
-      PASSWORD: my_custom_password  # change for custom password
-      METADATA_CACHE_TTL: 5m # cache heavy Xtream metadata (get_series, get_series_info)
-      XMLTV_CACHE_TTL: 30m   # cache xmltv.php responses to avoid repeated guide downloads
+
+      # Cache TTL for heavy metadata (get_series, get_vod_streams) and EPG XMLTV
+      METADATA_CACHE_TTL: 15m
+      XMLTV_CACHE_TTL: 30m
+
+      # ========================================================
+      # CLIENT LOGIN (Credentials used by Televizo / TiviMate / Web Admin)
+      # ========================================================
+      USER: "my_custom_username"
+      PASSWORD: "my_custom_password"
+
+      # ========================================================
+      # UPSTREAM IPTV PROVIDER CREDENTIALS
+      # (Initial defaults; can also be managed via Web Admin UI)
+      # ========================================================
+      XTREAM_BASE_URL: "http://provider-server.com:8080"
+      XTREAM_USER: "upstream_username"
+      XTREAM_PASSWORD: "upstream_password"
+
+      # ========================================================
+      # NORDVPN SOCKS5 PROXY (Remove or comment out if not using)
+      # ========================================================
+      ALL_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
+      HTTP_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
+      HTTPS_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
 ```
 
-## 5. Run it
+---
 
+## 🏃 Running and Managing the Proxy
+
+### Start the Proxy
 ```bash
 cd ~/iptv-proxy
-docker compose down
 docker compose up -d --build
 ```
-## ------------------------------------------------
-## To see logs
-## ------------------------------------------------
 
+### View Live Logs
 ```bash
-docker logs iptv-proxy
+docker compose logs -f iptv-proxy
+```
+You should see:
+```text
+[iptv-proxy] Storage directory configured: /data (filters: /data/filters.json, provider: /data/provider.json)
+[iptv-proxy] Loaded filters successfully from /data/filters.json
 ```
 
-## ------------------------------------------------
-## To change provider and account info
-## ------------------------------------------------
-
+### Stop or Restart
 ```bash
-sudo nano ~/iptv-proxy/docker-compose.yml
-```
+# Restart
+docker compose restart iptv-proxy
 
-```bash
-cd ~/iptv-proxy
+# Stop
 docker compose down
+
+# Rebuild after git update
+git pull
 docker compose up -d --build
 ```
+
+---
+
+## 🖥️ Web Admin Dashboard
+
+Open your browser and navigate to:
+```text
+http://<YOUR_VPS_IP>:8060/admin/
+```
+
+* **Username**: The `USER` set in `docker-compose.yml`
+* **Password**: The `PASSWORD` set in `docker-compose.yml`
+
+### What You Can Do in the Admin UI:
+1. **Providers Tab**:
+   * Add multiple IPTV providers to aggregate into a single playlist.
+   * Add backup/failover server URLs for each provider.
+   * Run latency and connectivity tests (`🧪 Test Server`).
+2. **Category Filtering Tabs (Live TV, Movies, Series)**:
+   * Search and uncheck unwanted categories (e.g. adult categories, foreign languages, unneeded sports packages).
+   * Click **💾 Save Filters**. Caches are cleared instantly and new filters take effect immediately.
+3. **Data Persistence**:
+   * All saved filters and provider configurations are written directly to `./data/filters.json` and `./data/provider.json` on your host. They survive all future container rebuilds.
+
+---
+
+## 📺 Configuring Your IPTV Player
+
+Connect your IPTV apps (Televizo, TiviMate, IPTnator, IPTV Smarters, XCIPTV, etc.) using the proxy's credentials:
+
+### 1. Xtream Codes API (Recommended)
+| Field | Value |
+| :--- | :--- |
+| **Server URL** | `http://<YOUR_VPS_IP>:8060` |
+| **Username** | Your `USER` from `docker-compose.yml` |
+| **Password** | Your `PASSWORD` from `docker-compose.yml` |
+
+> **Tip for Televizo / TiviMate:** If you update category filters in the Web Admin, go to **Settings → Playlists → [Your Playlist] → Reload / Update Playlist** in your player app to flush its local database and load the new filtered catalog.
+
+### 2. M3U Playlist & EPG URLs
+* **M3U Playlist**:
+  ```text
+  http://<YOUR_VPS_IP>:8060/iptv.m3u?username=YOUR_USER&password=YOUR_PASSWORD
+  ```
+* **EPG (XMLTV Guide)**:
+  ```text
+  http://<YOUR_VPS_IP>:8060/xmltv.php?username=YOUR_USER&password=YOUR_PASSWORD
+  ```
+
+---
+
+## 🔍 Troubleshooting & FAQ
+
+### 1. Why are changes lost when restarting the container?
+Ensure your `docker-compose.yml` has the `volumes` section enabled:
+```yaml
+volumes:
+  - ./data:/data
+```
+Check that the folder exists on your VPS:
+```bash
+ls -la ~/iptv-proxy/data/
+# Should contain: filters.json  provider.json
+```
+
+### 2. How can I verify NordVPN SOCKS5 is working?
+Run this command from the host or check proxy logs:
+```bash
+docker exec -it iptv-proxy sh -c "echo ALL_PROXY=\$ALL_PROXY"
+```
+When active, requests to your IPTV provider originate from NordVPN's IP rather than your VPS IP.
+
+### 3. Upstream Provider Returns 403 Forbidden
+Some IPTV providers block standard HTTP clients or specific User-Agents. Set `USER_AGENT: "IPTVSmartersPro"` or `"TiviMate/4.7.0 (Android TV)"` in `docker-compose.yml`.
+
+### 4. Adult movies still appear in search after unchecking the category?
+1. Ensure the container has the latest updates.
+2. In your IPTV player app (such as Televizo), tap **Reload Playlist** or clear playlist cache so the player updates its local search index.
+
+---
+
+## 📄 License
+
+GPL-3.0 License. See `LICENSE` for details.

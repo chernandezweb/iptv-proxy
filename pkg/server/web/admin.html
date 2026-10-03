@@ -1693,11 +1693,16 @@
                 <span class="spinner"></span> Checking GitHub repository for latest commits...
             </div>
         </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeUpdateModal()">Close</button>
-            <button type="button" class="btn" id="copyUpdateCmdBtn" onclick="copyUpdateCommand()" style="display:none;">
-                📋 Copy 1-Line Update Command
-            </button>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+            <a href="https://github.com/chernandezweb/iptv-proxy" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration:none; font-size:0.82rem; padding:0.4rem 0.75rem; display:inline-flex; align-items:center; gap:0.4rem;" title="View source repository on GitHub">
+                <span>🐙 GitHub Repository ↗</span>
+            </a>
+            <div style="display:flex; gap:0.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeUpdateModal()">Close</button>
+                <button type="button" class="btn" id="copyUpdateCmdBtn" onclick="copyUpdateCommand()" style="display:none;">
+                    📋 Copy 1-Line Update Command
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -3083,6 +3088,20 @@
                             </span>
                         `}
                     </div>
+                </div>
+
+                <!-- Source Repo Link Info -->
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:0.45rem 0.75rem; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:1rem; font-size:0.8rem;">
+                    <div style="display:flex; align-items:center; gap:0.4rem; color:var(--text-muted);">
+                        <span>🐙</span>
+                        <span>Source Repository:</span>
+                        <a href="https://github.com/chernandezweb/iptv-proxy" target="_blank" rel="noopener" style="color:var(--primary); font-weight:600; text-decoration:none;">
+                            chernandezweb/iptv-proxy ↗
+                        </a>
+                    </div>
+                    <a href="https://github.com/chernandezweb/iptv-proxy/commits/master" target="_blank" rel="noopener" style="color:#94a3b8; font-size:0.75rem; text-decoration:none; opacity:0.85;">
+                        Commit History ↗
+                    </a>
                 </div>
 
                 ${changelogHtml}

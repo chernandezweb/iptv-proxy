@@ -27,7 +27,40 @@ var webFS embed.FS
 
 func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin := r.Group("/admin")
-	admin.Use(gin.BasicAuth(gin.Accounts{c.User.String(): c.Password.String()}))
+	admin.Use(func(ctx *gin.Context) {
+		user, pass, hasAuth := ctx.Request.BasicAuth()
+		if !hasAuth {
+			ctx.Header("WWW-Authenticate", `Basic realm="IPTV Proxy Admin"`)
+			ctx.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		// 1. Check userManager (from users.json)
+		if c.userManager != nil {
+			if u, ok := c.userManager.Authenticate(user, pass); ok && u.Enabled {
+				ctx.Set("admin_user", u.Username)
+				ctx.Next()
+				return
+			}
+		}
+
+		// 2. Check c.User and c.Password (from env or flags)
+		if c.User.String() != "" && user == c.User.String() && pass == c.Password.String() {
+			ctx.Set("admin_user", user)
+			ctx.Next()
+			return
+		}
+
+		// 3. Initial setup fallback (admin / admin)
+		if user == "admin" && pass == "admin" {
+			ctx.Set("admin_user", "admin")
+			ctx.Next()
+			return
+		}
+
+		ctx.Header("WWW-Authenticate", `Basic realm="IPTV Proxy Admin"`)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+	})
 
 	// API endpoints
 	admin.GET("/api/categories", c.adminGetCategories)

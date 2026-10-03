@@ -154,6 +154,9 @@ func (c *Config) adminGetProviders(ctx *gin.Context) {
 	if len(provs) == 0 {
 		provs = c.GetEnabledProvidersOrFallback()
 	}
+	if provs == nil {
+		provs = []config.ProviderItem{}
+	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"providers": provs,
 	})

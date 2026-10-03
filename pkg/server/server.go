@@ -470,6 +470,9 @@ func (c *Config) GetEnabledProvidersOrFallback() []config.ProviderItem {
 		enabled = c.ProxyConfig.Provider.GetEnabledProviders()
 	}
 	if len(enabled) == 0 {
+		if c == nil || (c.XtreamBaseURL == "" && string(c.XtreamUser) == "") {
+			return nil
+		}
 		return []config.ProviderItem{
 			{
 				ID:             "provider_1",

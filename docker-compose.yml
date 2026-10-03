@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  iptv-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iptv-proxy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistent storage for provider.json, users.json, and filters.json across restarts & updates
+      - ./data:/data
+    environment:
+      PORT: 8080
+      DATA_DIR: "/data"
+      GIN_MODE: release
+      # Default initial web admin & client credentials
+      # You can change these or add more accounts at http://<VPS_IP>:8080/admin/ -> Users tab
+      USER: "admin"
+      PASSWORD: "admin"
+      # Optional: You can also configure providers directly through the Web UI (no editing needed!)
+      # Or uncomment below if you prefer hardcoding via environment variables:
+      # XTREAM_BASE_URL: "http://example.com:8080"
+      # XTREAM_USER: "my_upstream_user"
+      # XTREAM_PASSWORD: "my_upstream_password"

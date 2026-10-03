@@ -22,3 +22,6 @@ iptv/iptv.m3u
 /.history
 /.lh
 
+# Persistent runtime data
+data/
+

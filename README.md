@@ -20,35 +20,86 @@ A high-performance IPTV proxy for **Xtream Codes** and **M3U** playlists with bu
 
 ## 🚀 Quick Start on a VPS (Debian / Ubuntu)
 
-### Step 1: Connect to your VPS
-```bash
-ssh root@<YOUR_VPS_IP>
-```
+## 🚀 Quick Start on a VPS (Zero-Config Setup)
 
-### Step 2: Install Docker and Git
+You do **not** need to create or edit any YAML or configuration files to get started! You can boot the proxy with a single command and configure all providers, users, and category filters directly from the responsive Web Admin interface.
+
+### Step 1: Install Docker on your VPS (Debian / Ubuntu)
 ```bash
 apt update && apt upgrade -y
 apt install -y docker.io docker-compose curl git jq
 systemctl enable --now docker
 ```
 
-Verify Docker is installed:
-```bash
-docker --version
-docker-compose --version
-```
-
-### Step 3: Clone the Repository
+### Step 2: Clone and Start
 ```bash
 git clone https://github.com/chernandezweb/iptv-proxy.git ~/iptv-proxy
 cd ~/iptv-proxy
+docker compose up -d --build
+```
+
+### Step 3: Open the Web Admin Dashboard
+Open your browser (on desktop or mobile) and go to:
+```text
+http://<YOUR_VPS_IP>:8080/admin/
+```
+* **Default Username**: `admin`
+* **Default Password**: `admin`
+
+That's it! From the Web Admin UI, you can:
+1. **Add Your IPTV Provider(s)**: Go to the **Providers** tab and click **➕ Add Your First Provider** to enter your Xtream URL, username, password, and optional backup failover URLs.
+2. **Set Up User Accounts**: Go to the **Users** tab to change the default admin password and create separate accounts for family members or devices with custom concurrent stream limits.
+3. **Filter Categories**: Go to the **Live TV**, **Movies**, or **Series** tabs to uncheck unwanted or adult categories.
+
+All configurations are automatically saved to `./data/` on your host and persist permanently across container restarts, updates, and rebuilds.
+
+---
+
+## ⚙️ Advanced Configuration (Optional)
+
+If you prefer headless environment variables or want to route upstream traffic through **NordVPN SOCKS5**, you can customize `docker-compose.yml`:
+
+```yaml
+version: "3.8"
+
+services:
+  iptv-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iptv-proxy
+    restart: unless-stopped
+    ports:
+      # Format: HOST_PORT:CONTAINER_PORT
+      - "8080:8080"
+    volumes:
+      # Persistent storage for provider.json, users.json, and filters.json
+      - ./data:/data
+    environment:
+      PORT: 8080
+      DATA_DIR: "/data"
+      GIN_MODE: release
+
+      # Default admin credentials
+      USER: "admin"
+      PASSWORD: "admin"
+
+      # Optional: Hardcode upstream provider (or configure via Web UI)
+      # XTREAM_BASE_URL: "http://provider-domain.com:8080"
+      # XTREAM_USER: "upstream_username"
+      # XTREAM_PASSWORD: "upstream_password"
+
+      # Optional: Route upstream through NordVPN SOCKS5 (see below)
+      # ALL_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
+      # HTTP_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
+      # HTTPS_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
 ```
 
 ---
 
-## 🛡️ NordVPN SOCKS5 Setup (Optional but Recommended)
+## 🛡️ NordVPN SOCKS5 Setup (Optional)
 
-Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoids ISP blocks or throttling.
+Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoids ISP blocks or throttling without installing VPN software on the host.
 
 ### 1. Get your NordVPN Service Credentials
 > **Important:** SOCKS5 does **NOT** use your standard NordVPN email/password. You must generate **Service Credentials**:
@@ -67,81 +118,6 @@ Choose a server location closest to your IPTV provider or VPS:
 Format for `docker-compose.yml`:
 ```text
 socks5://<NORD_SERVICE_USERNAME>:<NORD_SERVICE_PASSWORD>@<SERVER_HOSTNAME>:1080
-```
-
----
-
-## ⚙️ Configuration (`docker-compose.yml`)
-
-Copy the template file to create your active `docker-compose.yml`:
-```bash
-cp docker-compose-template.yml docker-compose.yml
-nano docker-compose.yml
-```
-
-Here is a complete, production-ready configuration:
-
-```yaml
-version: "3"
-services:
-  iptv-proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: "iptv-proxy"
-    restart: on-failure
-    ports:
-      # Host:Container port. Change 8060 to whatever port you prefer on your VPS.
-      - 8060:8080
-    volumes:
-      # Persistent storage for provider.json and filters.json across all rebuilds
-      - ./data:/data
-    environment:
-      # Internal container port (must match the second number in ports)
-      PORT: 8080
-
-      # Storage directory for persistent configurations
-      DATA_DIR: "/data"
-
-      # Public IP or domain of your VPS (used to construct stream URLs)
-      HOSTNAME: "YOUR_VPS_IP"
-
-      # Gin web framework mode
-      GIN_MODE: release
-
-      # Upstream User-Agent masquerading (avoids player blocks from IPTV providers)
-      USER_AGENT: "IPTVSmartersPro"
-
-      # Upstream Referer domain (leave empty or set to provider domain)
-      REFERER: "http://your-provider-domain.com"
-
-      # Upstream timeout in milliseconds
-      TIMEOUT: 30000
-
-      # Cache TTL for heavy metadata (get_series, get_vod_streams) and EPG XMLTV
-      METADATA_CACHE_TTL: 15m
-      XMLTV_CACHE_TTL: 30m
-
-      # ========================================================
-      # CLIENT LOGIN (Credentials used by Televizo / TiviMate / Web Admin)
-      # ========================================================
-      USER: "my_custom_username"
-      PASSWORD: "my_custom_password"
-
-      # ========================================================
-      # UPSTREAM IPTV PROVIDER CREDENTIALS
-      # (Initial defaults; can also be managed via Web Admin UI)
-      # ========================================================
-      XTREAM_BASE_URL: "http://provider-server.com:8080"
-      XTREAM_USER: "upstream_username"
-      XTREAM_PASSWORD: "upstream_password"
-
-      # ========================================================
-      # NORDVPN SOCKS5 PROXY (Remove or comment out if not using)
-      # ========================================================
-      ALL_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
-      HTTP_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
-      HTTPS_PROXY: "socks5://NORD_SERVICE_USER:NORD_SERVICE_PASSWORD@se.socks.nordhold.net:1080"
 ```
 
 ---
@@ -209,20 +185,20 @@ Connect your IPTV apps (Televizo, TiviMate, IPTnator, IPTV Smarters, XCIPTV, etc
 ### 1. Xtream Codes API (Recommended)
 | Field | Value |
 | :--- | :--- |
-| **Server URL** | `http://<YOUR_VPS_IP>:8060` |
-| **Username** | Your `USER` from `docker-compose.yml` |
-| **Password** | Your `PASSWORD` from `docker-compose.yml` |
+| **Server URL** | `http://<YOUR_VPS_IP>:8080` |
+| **Username** | Your username (configured in Web Admin -> Users tab) |
+| **Password** | Your password (configured in Web Admin -> Users tab) |
 
 > **Tip for Televizo / TiviMate:** If you update category filters in the Web Admin, go to **Settings → Playlists → [Your Playlist] → Reload / Update Playlist** in your player app to flush its local database and load the new filtered catalog.
 
 ### 2. M3U Playlist & EPG URLs
 * **M3U Playlist**:
   ```text
-  http://<YOUR_VPS_IP>:8060/iptv.m3u?username=YOUR_USER&password=YOUR_PASSWORD
+  http://<YOUR_VPS_IP>:8080/iptv.m3u?username=YOUR_USER&password=YOUR_PASSWORD
   ```
 * **EPG (XMLTV Guide)**:
   ```text
-  http://<YOUR_VPS_IP>:8060/xmltv.php?username=YOUR_USER&password=YOUR_PASSWORD
+  http://<YOUR_VPS_IP>:8080/xmltv.php?username=YOUR_USER&password=YOUR_PASSWORD
   ```
 
 ---

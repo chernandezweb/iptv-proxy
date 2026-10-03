@@ -82,7 +82,6 @@ type ProviderData struct {
 	UserAgent      string                `json:"user_agent"`
 	Providers          []ProviderItem        `json:"providers"`
 	SocksProxy         UpstreamProxySettings `json:"socks_proxy"`
-	StreamRelayEnabled *bool                 `json:"stream_relay_enabled,omitempty"`
 }
 
 // Provider manages persistent provider configuration.
@@ -619,26 +618,6 @@ func (p *Provider) GetSocksProxy() UpstreamProxySettings {
 func (p *Provider) SetSocksProxy(s UpstreamProxySettings) error {
 	p.Lock()
 	p.Data.SocksProxy = s
-	data := p.Data
-	p.Unlock()
-	return p.Save(data)
-}
-
-// IsStreamRelayEnabled returns true if shared stream relay multiplexing is enabled.
-// Defaults to false (Direct 1:1 Streaming mode) for maximum compatibility with players like TiviMate.
-func (p *Provider) IsStreamRelayEnabled() bool {
-	p.RLock()
-	defer p.RUnlock()
-	if p.Data.StreamRelayEnabled == nil {
-		return false
-	}
-	return *p.Data.StreamRelayEnabled
-}
-
-// SetStreamRelayEnabled updates the stream relay multiplexing setting and saves to disk.
-func (p *Provider) SetStreamRelayEnabled(enabled bool) error {
-	p.Lock()
-	p.Data.StreamRelayEnabled = &enabled
 	data := p.Data
 	p.Unlock()
 	return p.Save(data)

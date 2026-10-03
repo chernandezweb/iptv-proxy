@@ -111,7 +111,6 @@ type Config struct {
 	metadataCache *responseCache
 	xmltvCache    *responseCache
 	chunkCache    *chunkCache
-	streamHub     *StreamHub
 	userManager   *config.UserManager
 	httpClient    *http.Client
 	baseStreamURL *url.URL
@@ -161,7 +160,6 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.metadataCache = newResponseCache(cfgData.MetadataCacheTTL)
 	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
 	cfg.chunkCache = newChunkCache(15 * time.Second)
-	cfg.streamHub = newStreamHub()
 	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
@@ -585,10 +583,3 @@ func (c *Config) GetEnabledProvidersOrFallback() []config.ProviderItem {
 	return enabled
 }
 
-// IsSharedStreamEnabled checks whether shared stream relay multiplexing is enabled in provider settings.
-func (c *Config) IsSharedStreamEnabled() bool {
-	if c != nil && c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
-		return c.ProxyConfig.Provider.IsStreamRelayEnabled()
-	}
-	return false
-}

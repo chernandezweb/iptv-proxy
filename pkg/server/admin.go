@@ -102,8 +102,6 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/users", c.adminSaveUsers)
 	admin.DELETE("/api/users/:id", c.adminDeleteUser)
 	admin.GET("/api/streams", c.adminGetStreams)
-	admin.GET("/api/stream-relay", c.adminGetStreamRelay)
-	admin.POST("/api/stream-relay", c.adminSaveStreamRelay)
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
@@ -834,75 +832,40 @@ func (c *Config) adminDeleteUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"status": "success", "message": "User deleted successfully"})
 }
 
+type ActiveStreamSession struct {
+	Username  string    `json:"username"`
+	IP        string    `json:"ip"`
+	StreamID  string    `json:"stream_id"`
+	StreamURL string    `json:"stream_url"`
+	StartedAt time.Time `json:"started_at"`
+	Duration  string    `json:"duration"`
+}
+
 func (c *Config) adminGetStreams(ctx *gin.Context) {
-	var relays []ActiveStreamInfo
-	if c.streamHub != nil {
-		relays = c.streamHub.GetActiveStreamsInfo()
-	}
-	if relays == nil {
-		relays = []ActiveStreamInfo{}
-	}
-
-	var userSlots map[string][]config.UserSlot
+	var sessions []ActiveStreamSession
 	if c.userManager != nil {
-		userSlots = c.userManager.GetAllActiveSlots()
-	}
-	if userSlots == nil {
-		userSlots = make(map[string][]config.UserSlot)
-	}
-
-	totalViewers := 0
-	for _, r := range relays {
-		totalViewers += r.Viewers
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"relays":        relays,
-		"user_slots":    userSlots,
-		"total_relays":  len(relays),
-		"total_viewers": totalViewers,
-		"relay_enabled": c.IsSharedStreamEnabled(),
-	})
-}
-
-func (c *Config) adminGetStreamRelay(ctx *gin.Context) {
-	enabled := c.IsSharedStreamEnabled()
-	mode := "direct"
-	if enabled {
-		mode = "shared"
-	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"enabled": enabled,
-		"mode":    mode,
-	})
-}
-
-func (c *Config) adminSaveStreamRelay(ctx *gin.Context) {
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
-		return
-	}
-
-	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
-		if err := c.ProxyConfig.Provider.SetStreamRelayEnabled(req.Enabled); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save stream relay setting: " + err.Error()})
-			return
+		allSlots := c.userManager.GetAllActiveSlots()
+		for user, slots := range allSlots {
+			for _, sl := range slots {
+				dur := time.Since(sl.StartedAt).Truncate(time.Second).String()
+				sessions = append(sessions, ActiveStreamSession{
+					Username:  user,
+					IP:        sl.IP,
+					StreamID:  sl.StreamID,
+					StreamURL: sl.StreamURL,
+					StartedAt: sl.StartedAt,
+					Duration:  dur,
+				})
+			}
 		}
 	}
-
-	modeStr := "Direct 1:1 Streaming (Rock-solid for TiviMate, ExoPlayer & VLC)"
-	if req.Enabled {
-		modeStr = "Shared Stream Relay Multiplexer (Bandwidth & upstream connection saver)"
+	if sessions == nil {
+		sessions = []ActiveStreamSession{}
 	}
-	log.Printf("[iptv-proxy] Live streaming mode switched to: %s", modeStr)
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"enabled": req.Enabled,
-		"message": fmt.Sprintf("Stream mode switched to: %s", modeStr),
+		"streams":       sessions,
+		"total_streams": len(sessions),
 	})
 }
 

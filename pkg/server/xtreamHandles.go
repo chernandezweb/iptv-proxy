@@ -875,6 +875,20 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 					}
 				}
 			}
+			if serverInfo, ok := loginMap["server_info"].(map[string]interface{}); ok {
+				// Automatically use the host header from the client request (e.g. VPS IP or domain)
+				reqHost := ctx.Request.Host
+				if h, p, errH := net.SplitHostPort(reqHost); errH == nil {
+					serverInfo["url"] = h
+					if pInt, errP := strconv.Atoi(p); errP == nil {
+						serverInfo["port"] = pInt
+						serverInfo["https_port"] = pInt
+						serverInfo["rtmp_port"] = pInt
+					}
+				} else if reqHost != "" {
+					serverInfo["url"] = reqHost
+				}
+			}
 			if updated, errM := json.Marshal(loginMap); errM == nil {
 				payload = updated
 			}

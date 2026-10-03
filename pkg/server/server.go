@@ -158,6 +158,23 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.ProxyConfig.XtreamBaseURL = provData.XtreamBaseURL
 	cfg.ProxyConfig.BackupURLs = provData.BackupURLs
 	cfg.ProxyConfig.XtreamUser = config.CredentialString(provData.XtreamUser)
+
+	// Auto-detect public IP if Hostname is not explicitly set
+	if cfgData.HostConfig != nil && (cfgData.HostConfig.Hostname == "" || cfgData.HostConfig.Hostname == "0.0.0.0") {
+		go func() {
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp, err := client.Get("https://api.ipify.org")
+			if err == nil && resp.StatusCode == http.StatusOK {
+				body, _ := ioutil.ReadAll(resp.Body)
+				resp.Body.Close()
+				ip := strings.TrimSpace(string(body))
+				if ip != "" && net.ParseIP(ip) != nil {
+					cfgData.HostConfig.Hostname = ip
+					log.Printf("[iptv-proxy] Auto-detected public VPS IP: %s", ip)
+				}
+			}
+		}()
+	}
 	cfg.ProxyConfig.XtreamPassword = config.CredentialString(provData.XtreamPassword)
 	cfg.ProxyConfig.Referer = provData.Referer
 	cfg.ProxyConfig.UserAgent = provData.UserAgent

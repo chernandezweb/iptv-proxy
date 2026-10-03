@@ -8,7 +8,7 @@ RUN git rev-parse HEAD > /app_commit.txt 2>/dev/null || (test -f .git/refs/heads
 RUN GO111MODULE=off CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o iptv-proxy .
 
 FROM alpine:3
-RUN apk add --no-cache ca-certificates && mkdir -p /data
+RUN apk add --no-cache ca-certificates util-linux && mkdir -p /data
 ENV DATA_DIR=/data
 VOLUME ["/data"]
 COPY --from=0 /app_commit.txt /

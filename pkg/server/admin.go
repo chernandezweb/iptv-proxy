@@ -1344,11 +1344,20 @@ exit 1`, searchPaths)
 		"Image":      imageToUse,
 		"Entrypoint": []string{"sh", "-c"},
 		"Cmd": []string{
-			fmt.Sprintf(`if command -v nsenter >/dev/null 2>&1; then
-  nsenter -t 1 -m -u -n -i -p -- sh -c %s
+			fmt.Sprintf(`NSENTER=""
+if command -v nsenter >/dev/null 2>&1; then
+  NSENTER="nsenter"
+elif [ -x /host/usr/bin/nsenter ]; then
+  NSENTER="/host/usr/bin/nsenter"
+elif [ -x /host/bin/nsenter ]; then
+  NSENTER="/host/bin/nsenter"
+fi
+
+if [ -n "$NSENTER" ]; then
+  $NSENTER -t 1 -m -u -n -i -p -- sh -c %s
 else
   chroot /host sh -c %s
-fi`, strconv.Quote(script), strconv.Quote("mount -t proc proc /proc 2>/dev/null || true; " + script)),
+fi`, strconv.Quote("exec > /tmp/iptv_update.log 2>&1; " + script), strconv.Quote("mount -t proc proc /proc 2>/dev/null || true; exec > /tmp/iptv_update.log 2>&1; " + script)),
 		},
 		"HostConfig": map[string]interface{}{
 			"PidMode": "host",

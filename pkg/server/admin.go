@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -104,6 +106,7 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
 	admin.GET("/api/version", c.adminGetVersion)
 	admin.POST("/api/update", c.adminTriggerUpdate)
+	admin.GET("/api/logs", c.adminGetLogs)
 
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
@@ -1202,5 +1205,107 @@ func (c *Config) adminSaveAdminAuth(ctx *gin.Context) {
 		"message":  "Admin credentials updated successfully! Use your new username and password next time you log in.",
 	})
 }
+
+func (c *Config) adminGetLogs(ctx *gin.Context) {
+	tailStr := ctx.DefaultQuery("tail", "100")
+	tail, err := strconv.Atoi(tailStr)
+	if err != nil || tail <= 0 {
+		tail = 100
+	}
+	if tail > 1000 {
+		tail = 1000
+	}
+
+	if dockerSocketExists() {
+		tr := &http.Transport{
+			DialContext: func(ctx context.Context, proto, addr string) (net.Conn, error) {
+				return net.Dial("unix", "/var/run/docker.sock")
+			},
+		}
+		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+
+		candidates := []string{"iptv-proxy"}
+		if h, err := os.Hostname(); err == nil && h != "" {
+			candidates = append([]string{h}, candidates...)
+		}
+
+		for _, name := range candidates {
+			u := fmt.Sprintf("http://localhost/v1.40/containers/%s/logs?stdout=true&stderr=true&tail=%d&timestamps=false", name, tail)
+			resp, err := client.Get(u)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				body, _ := ioutil.ReadAll(resp.Body)
+				resp.Body.Close()
+				parsed := parseDockerLogs(body)
+				lines := strings.Split(strings.TrimSpace(parsed), "\n")
+				ctx.JSON(http.StatusOK, gin.H{
+					"source": "docker",
+					"tail":   tail,
+					"lines":  lines,
+					"raw":    parsed,
+				})
+				return
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
+	}
+
+	// Fallback to internal in-memory ring buffer
+	lines := globalLogBuffer.GetTail(tail)
+	ctx.JSON(http.StatusOK, gin.H{
+		"source": "memory",
+		"tail":   tail,
+		"lines":  lines,
+		"raw":    strings.Join(lines, "\n"),
+	})
+}
+
+func parseDockerLogs(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var out bytes.Buffer
+	r := bytes.NewReader(body)
+	hdr := make([]byte, 8)
+	demuxed := false
+
+	for {
+		if r.Len() < 8 {
+			break
+		}
+		_, err := io.ReadFull(r, hdr)
+		if err != nil {
+			break
+		}
+		// Docker stream multiplex header byte 0: 1=stdout, 2=stderr
+		if (hdr[0] == 1 || hdr[0] == 2) && hdr[1] == 0 && hdr[2] == 0 && hdr[3] == 0 {
+			demuxed = true
+			size := binary.BigEndian.Uint32(hdr[4:8])
+			if int(size) > r.Len() {
+				io.Copy(&out, r)
+				break
+			}
+			chunk := make([]byte, size)
+			r.Read(chunk)
+			out.Write(chunk)
+		} else {
+			break
+		}
+	}
+
+	if demuxed && out.Len() > 0 {
+		return out.String()
+	}
+
+	var clean bytes.Buffer
+	for _, b := range body {
+		if b >= 32 || b == '\n' || b == '\t' || b == '\r' || b == 27 {
+			clean.WriteByte(b)
+		}
+	}
+	return clean.String()
+}
+
 
 

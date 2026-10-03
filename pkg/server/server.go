@@ -21,6 +21,7 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -42,6 +43,47 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type LogRingBuffer struct {
+	sync.Mutex
+	lines []string
+	max   int
+}
+
+var globalLogBuffer = &LogRingBuffer{max: 1000}
+
+func (b *LogRingBuffer) Write(p []byte) (n int, err error) {
+	b.Lock()
+	defer b.Unlock()
+	str := string(p)
+	parts := strings.Split(str, "\n")
+	for _, line := range parts {
+		clean := strings.TrimRight(line, "\r")
+		if clean != "" {
+			b.lines = append(b.lines, clean)
+			if len(b.lines) > b.max {
+				b.lines = b.lines[len(b.lines)-b.max:]
+			}
+		}
+	}
+	return len(p), nil
+}
+
+func (b *LogRingBuffer) GetTail(n int) []string {
+	b.Lock()
+	defer b.Unlock()
+	if n <= 0 || n > len(b.lines) {
+		n = len(b.lines)
+	}
+	start := len(b.lines) - n
+	res := make([]string, n)
+	copy(res, b.lines[start:])
+	return res
+}
+
+func init() {
+	log.SetOutput(io.MultiWriter(os.Stderr, globalLogBuffer))
+}
 
 var defaultProxyfiedM3UPath = filepath.Join(os.TempDir(), uuid.NewV4().String()+".iptv-proxy.m3u")
 var endpointAntiColision = strings.Split(uuid.NewV4().String(), "-")[0]

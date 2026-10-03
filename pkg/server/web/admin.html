@@ -1091,6 +1091,11 @@
                 <span class="tab-title">VPN / Proxy</span>
                 <span class="badge" id="vpnBadge">OFF</span>
             </button>
+            <button class="tab" id="tab-logs" onclick="switchTab('logs')">
+                <span class="tab-icon">📜</span>
+                <span class="tab-title">Logs</span>
+                <span class="badge" id="logsBadge" style="background:rgba(56,189,248,0.15); color:#38bdf8;">100</span>
+            </button>
 
             <span class="nav-divider"></span>
 
@@ -1579,6 +1584,85 @@
             </div>
         </div>
     </div>
+
+    <!-- LOGS TAB -->
+    <div id="logsTab" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.35rem 0; font-size: 1.25rem; font-weight: 700; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                    <span>📜 Container Logs</span>
+                    <span id="logSourceBadge" class="status-badge online" style="font-size:0.75rem; text-transform:none;">docker logs --tail iptv-proxy</span>
+                </h2>
+                <p class="subtitle" style="margin:0;">Real-time output stream from the IPTV Proxy Docker container daemon.</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                <!-- Lines selector -->
+                <select id="logsTailSelect" onchange="fetchLogs()" class="form-input" style="width:auto; padding:0.45rem 0.85rem; font-size:0.85rem; height:38px; background:var(--bg-card); cursor:pointer;">
+                    <option value="50">50 lines</option>
+                    <option value="100" selected>100 lines</option>
+                    <option value="250">250 lines</option>
+                    <option value="500">500 lines</option>
+                </select>
+
+                <!-- Auto-refresh button -->
+                <button type="button" class="btn btn-secondary" id="logsAutoRefreshBtn" onclick="toggleLogsAutoRefresh()" style="font-size:0.85rem; padding:0.45rem 0.85rem; height:38px;">
+                    ⏱️ Auto-Refresh: <strong style="color:var(--primary); margin-left:3px;" id="logsAutoRefreshState">ON (3s)</strong>
+                </button>
+
+                <!-- Refresh button -->
+                <button type="button" class="btn btn-secondary" id="refreshLogsBtn" onclick="fetchLogs()" style="font-size:0.85rem; padding:0.45rem 0.85rem; height:38px;" title="Fetch latest logs">
+                    🔄 Refresh
+                </button>
+
+                <!-- Copy button -->
+                <button type="button" class="btn btn-secondary" onclick="copyLogs()" style="font-size:0.85rem; padding:0.45rem 0.85rem; height:38px;" title="Copy all logs to clipboard">
+                    📋 Copy
+                </button>
+
+                <!-- Clear button -->
+                <button type="button" class="btn btn-secondary" onclick="clearLogsView()" style="font-size:0.85rem; padding:0.45rem 0.75rem; height:38px;" title="Clear view">
+                    🗑️
+                </button>
+            </div>
+        </div>
+
+        <!-- Terminal Filter Bar -->
+        <div style="display:flex; gap:0.75rem; margin-bottom:0.75rem; align-items:center; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px; position:relative;">
+                <input type="text" id="logsFilterInput" oninput="filterLogsView()" placeholder="🔍 Filter logs (e.g. error, venezuela, xtream, GET, 200, 403)..." class="form-input" style="padding:0.45rem 0.85rem; font-size:0.85rem; height:36px; background:#070a13; font-family:monospace; border-color:var(--border);">
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; color:var(--text-muted);">
+                <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer;">
+                    <input type="checkbox" id="logsAutoScroll" checked> Auto-scroll to bottom
+                </label>
+                <span style="opacity:0.4;">|</span>
+                <span id="logsStats">0 lines</span>
+            </div>
+        </div>
+
+        <!-- CLI Console Window -->
+        <div class="terminal-window" style="background:#060913; border:1px solid rgba(99,102,241,0.25); border-radius:var(--radius); box-shadow:0 8px 30px rgba(0,0,0,0.5); overflow:hidden;">
+            <!-- Terminal Header / Titlebar -->
+            <div style="background:#0d1224; border-bottom:1px solid rgba(99,102,241,0.15); padding:0.5rem 0.85rem; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444;"></span>
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f59e0b;"></span>
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#10b981;"></span>
+                    <span style="font-family:monospace; font-size:0.75rem; color:#94a3b8; margin-left:0.5rem;">docker logs --tail <span id="termTailVal">100</span> iptv-proxy</span>
+                </div>
+                <div style="font-family:monospace; font-size:0.75rem; color:#64748b;" id="termLastUpdated">
+                    Last update: --:--:--
+                </div>
+            </div>
+
+            <!-- Terminal Output Area -->
+            <div id="terminalBody" style="padding:1rem; font-family:'Fira Code', Consolas, Monaco, monospace; font-size:0.8rem; line-height:1.55; color:#cbd5e1; max-height:560px; min-height:360px; overflow-y:auto; overflow-x:auto; white-space:pre-wrap; word-break:break-all; user-select:text;">
+                <div class="loading-state">
+                    <span class="spinner"></span> Connecting to Docker socket and streaming logs...
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="toast" id="toast">
@@ -1637,7 +1721,7 @@
         if (targetContent) targetContent.classList.add('active');
 
         const saveFiltersBtn = document.getElementById('saveFiltersBtn');
-        if (type === 'provider' || type === 'users' || type === 'streams' || type === 'vpn') {
+        if (type === 'provider' || type === 'users' || type === 'streams' || type === 'vpn' || type === 'logs') {
             saveFiltersBtn.style.display = 'none';
         } else {
             saveFiltersBtn.style.display = 'inline-flex';
@@ -1645,10 +1729,18 @@
 
         if (type === 'users') {
             loadUsers();
+            stopLogsAutoRefresh();
         } else if (type === 'streams') {
             loadStreams();
+            stopLogsAutoRefresh();
         } else if (type === 'vpn') {
             loadVpnProxy();
+            stopLogsAutoRefresh();
+        } else if (type === 'logs') {
+            fetchLogs();
+            startLogsAutoRefresh();
+        } else {
+            stopLogsAutoRefresh();
         }
     }
 
@@ -3022,11 +3114,168 @@
     function fallbackCopyText(text) {
         const textarea = document.createElement('textarea');
         textarea.value = text;
-        document.body.appendChild(textarea);
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
-        showToast('📋 Update command copied to clipboard!', 'success');
+        showToast('📋 Copied to clipboard!', 'success');
+    }
+
+    // ==========================================
+    // CONTAINER LOGS VIEWER (DOCKER / MEMORY)
+    // ==========================================
+    let logsAutoRefreshTimer = null;
+    let logsRawText = '';
+    let logsLines = [];
+
+    async function fetchLogs() {
+        const tailSelect = document.getElementById('logsTailSelect');
+        const tail = tailSelect ? tailSelect.value : '100';
+        const termTail = document.getElementById('termTailVal');
+        if (termTail) termTail.textContent = tail;
+
+        const termBody = document.getElementById('terminalBody');
+        const badge = document.getElementById('logSourceBadge');
+        const lastUpdated = document.getElementById('termLastUpdated');
+
+        try {
+            const res = await fetch(`/admin/api/logs?tail=${tail}`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+
+            logsRawText = data.raw || '';
+            logsLines = data.lines || [];
+
+            if (badge) {
+                if (data.source === 'docker') {
+                    badge.className = 'status-badge online';
+                    badge.textContent = `🐳 docker logs --tail ${tail} iptv-proxy`;
+                } else {
+                    badge.className = 'status-badge loading';
+                    badge.textContent = `💾 In-Memory Buffer (${tail} lines)`;
+                }
+            }
+
+            if (lastUpdated) {
+                lastUpdated.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+            }
+
+            filterLogsView();
+        } catch (e) {
+            console.error('Error fetching logs:', e);
+            if (termBody && logsLines.length === 0) {
+                termBody.innerHTML = `<div style="color:var(--danger); padding:1rem;">Failed to fetch container logs: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+    }
+
+    function filterLogsView() {
+        const filterInput = document.getElementById('logsFilterInput');
+        const query = filterInput ? filterInput.value.toLowerCase().trim() : '';
+        const termBody = document.getElementById('terminalBody');
+        const stats = document.getElementById('logsStats');
+        const autoScroll = document.getElementById('logsAutoScroll');
+
+        if (!termBody) return;
+
+        let filtered = logsLines;
+        if (query) {
+            filtered = logsLines.filter(line => line.toLowerCase().includes(query));
+        }
+
+        if (stats) {
+            stats.textContent = `${filtered.length} of ${logsLines.length} lines`;
+        }
+
+        if (filtered.length === 0) {
+            termBody.innerHTML = `<div style="color:#64748b; font-style:italic; padding:1rem;">${query ? 'No log lines matched "' + escapeHtml(query) + '"' : 'No logs recorded yet'}</div>`;
+            return;
+        }
+
+        let formatted = '';
+        for (let i = 0; i < filtered.length; i++) {
+            const line = filtered[i];
+            const lower = line.toLowerCase();
+            let color = '#cbd5e1'; // default
+            if (lower.includes('error') || lower.includes('fail') || lower.includes('fatal') || lower.includes('panic') || lower.includes('403 forbidden') || lower.includes('500')) {
+                color = '#f87171'; // red
+            } else if (lower.includes('warning') || lower.includes('warn') || lower.includes('retry')) {
+                color = '#fbbf24'; // yellow
+            } else if (lower.includes('success') || lower.includes('ready') || lower.includes('listening') || lower.includes('online') || lower.includes('connected')) {
+                color = '#4ade80'; // green
+            } else if (lower.includes('[iptv-proxy]') || lower.includes('info') || lower.includes('action')) {
+                color = '#38bdf8'; // sky blue
+            }
+
+            formatted += `<div style="color:${color}; padding:1px 0;">${escapeHtml(line)}</div>`;
+        }
+
+        termBody.innerHTML = formatted;
+
+        if (autoScroll && autoScroll.checked) {
+            termBody.scrollTop = termBody.scrollHeight;
+        }
+    }
+
+    function toggleLogsAutoRefresh() {
+        const btn = document.getElementById('logsAutoRefreshState');
+        if (logsAutoRefreshTimer) {
+            clearInterval(logsAutoRefreshTimer);
+            logsAutoRefreshTimer = null;
+            if (btn) {
+                btn.textContent = 'PAUSED';
+                btn.style.color = 'var(--text-muted)';
+            }
+        } else {
+            startLogsAutoRefresh();
+        }
+    }
+
+    function startLogsAutoRefresh() {
+        if (logsAutoRefreshTimer) clearInterval(logsAutoRefreshTimer);
+        const btn = document.getElementById('logsAutoRefreshState');
+        if (btn) {
+            btn.textContent = 'ON (3s)';
+            btn.style.color = 'var(--primary)';
+        }
+        logsAutoRefreshTimer = setInterval(() => {
+            if (state.currentTab === 'logs') {
+                fetchLogs();
+            }
+        }, 3000);
+    }
+
+    function stopLogsAutoRefresh() {
+        if (logsAutoRefreshTimer) {
+            clearInterval(logsAutoRefreshTimer);
+            logsAutoRefreshTimer = null;
+            const btn = document.getElementById('logsAutoRefreshState');
+            if (btn) {
+                btn.textContent = 'PAUSED';
+                btn.style.color = 'var(--text-muted)';
+            }
+        }
+    }
+
+    function copyLogs() {
+        const textToCopy = logsRawText || logsLines.join('\n');
+        if (!textToCopy) {
+            showToast('No logs to copy', 'error');
+            return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                showToast('📋 Logs copied to clipboard!', 'success');
+            }).catch(() => fallbackCopyText(textToCopy));
+        } else {
+            fallbackCopyText(textToCopy);
+        }
+    }
+
+    function clearLogsView() {
+        const termBody = document.getElementById('terminalBody');
+        if (termBody) {
+            termBody.innerHTML = '<div style="color:#64748b; font-style:italic; padding:1rem;">Terminal view cleared. Click Refresh to reload.</div>';
+        }
     }
 
     async function reloadAll() {
@@ -3035,6 +3284,9 @@
         await loadUsers();
         await loadStreams();
         await loadVpnProxy();
+        if (state.currentTab === 'logs') {
+            await fetchLogs();
+        }
     }
 
     // Initialize on page load

@@ -6,7 +6,9 @@ import (
 	"embed"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"io/ioutil"
 	"net"
@@ -1013,29 +1015,126 @@ func getCurrentCommit() string {
 	return "c08aa74" // Fallback to current build
 }
 
-func (c *Config) adminGetVersion(ctx *gin.Context) {
-	client := &http.Client{Timeout: 6 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx.Request.Context(), "GET", "https://api.github.com/repos/chernandezweb/iptv-proxy/commits?per_page=15", nil)
-	req.Header.Set("User-Agent", "iptv-proxy")
+var (
+	ghCacheLock  sync.Mutex
+	ghCacheTime  time.Time
+	ghCachedList []ghCommitItem
+)
 
-	type ghCommitItem struct {
-		SHA    string `json:"sha"`
-		Commit struct {
-			Message string `json:"message"`
-			Author  struct {
-				Date string `json:"date"`
-			} `json:"author"`
-		} `json:"commit"`
+type ghCommitItem struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Message string `json:"message"`
+		Author  struct {
+			Date string `json:"date"`
+		} `json:"author"`
+	} `json:"commit"`
+}
+
+type atomFeed struct {
+	XMLName xml.Name `xml:"feed"`
+	Entries []struct {
+		ID      string `xml:"id"`
+		Title   string `xml:"title"`
+		Updated string `xml:"updated"`
+	} `xml:"entry"`
+}
+
+func fetchLatestGitHubCommits() []ghCommitItem {
+	ghCacheLock.Lock()
+	defer ghCacheLock.Unlock()
+
+	if time.Since(ghCacheTime) < 90*time.Second && len(ghCachedList) > 0 {
+		return ghCachedList
 	}
+
+	client := &http.Client{Timeout: 6 * time.Second}
+
+	// 1. Try GitHub REST API
+	req, _ := http.NewRequest("GET", "https://api.github.com/repos/chernandezweb/iptv-proxy/commits?per_page=15", nil)
+	req.Header.Set("User-Agent", "iptv-proxy")
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	var ghList []ghCommitItem
-	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
-		json.NewDecoder(resp.Body).Decode(&ghList)
+	if resp, err := client.Do(req); err == nil {
+		if resp.StatusCode == http.StatusOK {
+			if json.NewDecoder(resp.Body).Decode(&ghList) == nil && len(ghList) > 0 {
+				resp.Body.Close()
+				ghCachedList = ghList
+				ghCacheTime = time.Now()
+				return ghList
+			}
+		}
+		resp.Body.Close()
 	}
 
+	// 2. If REST API fails (e.g. Rate Limited HTTP 403 or network issue), fallback to GitHub Atom feed (rate-limit free!)
+	atomReq, _ := http.NewRequest("GET", "https://github.com/chernandezweb/iptv-proxy/commits/master.atom", nil)
+	atomReq.Header.Set("User-Agent", "iptv-proxy")
+	if atomResp, err := client.Do(atomReq); err == nil {
+		defer atomResp.Body.Close()
+		if atomResp.StatusCode == http.StatusOK {
+			var feed atomFeed
+			if xml.NewDecoder(atomResp.Body).Decode(&feed) == nil && len(feed.Entries) > 0 {
+				var parsed []ghCommitItem
+				for _, entry := range feed.Entries {
+					sha := ""
+					if strings.Contains(entry.ID, "Grit::Commit/") {
+						parts := strings.Split(entry.ID, "Grit::Commit/")
+						if len(parts) > 1 {
+							sha = strings.TrimSpace(parts[1])
+						}
+					}
+					if sha == "" {
+						continue
+					}
+					cleanTitle := strings.TrimSpace(entry.Title)
+					cleanTitle = strings.ReplaceAll(cleanTitle, "\n", " ")
+					cleanTitle = html.UnescapeString(cleanTitle)
+
+					var item ghCommitItem
+					item.SHA = sha
+					item.Commit.Message = cleanTitle
+					item.Commit.Author.Date = entry.Updated
+					parsed = append(parsed, item)
+					if len(parsed) >= 15 {
+						break
+					}
+				}
+				if len(parsed) > 0 {
+					ghCachedList = parsed
+					ghCacheTime = time.Now()
+					return parsed
+				}
+			}
+		}
+	}
+
+	return ghCachedList
+}
+
+func (c *Config) adminGetVersion(ctx *gin.Context) {
+	ghList := fetchLatestGitHubCommits()
 	currentCommit := getCurrentCommit()
+
+	if len(ghList) == 0 {
+		ctx.JSON(http.StatusOK, gin.H{
+			"boot_time":       serverStartTime,
+			"current_commit":  currentCommit,
+			"latest_commit":   "",
+			"latest_message":  "",
+			"latest_date":     "",
+			"pending_commits": []CommitSummary{},
+			"behind_count":    0,
+			"is_up_to_date":   false,
+			"check_failed":    true,
+			"error":           "Unable to reach GitHub. Please check server internet connectivity or retry shortly.",
+			"update_command":  "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+			"docker_socket":   dockerSocketExists(),
+		})
+		return
+	}
+
 	latestCommit := currentCommit
 	latestMessage := ""
 	latestDate := ""
@@ -1107,6 +1206,7 @@ func (c *Config) adminGetVersion(ctx *gin.Context) {
 		"pending_commits": pendingCommits,
 		"behind_count":    len(pendingCommits),
 		"is_up_to_date":   isUpToDate,
+		"check_failed":    false,
 		"update_command":  "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
 		"docker_socket":   dockerSocketExists(),
 	})

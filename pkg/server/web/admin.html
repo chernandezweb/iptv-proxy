@@ -3101,12 +3101,66 @@ services:<br>
     let latestUpdateCommand = 'cd ~/iptv-proxy && git pull origin master && docker compose up -d --build';
     let currentVersionInfo = null;
 
+    async function enrichVersionWithBrowserFetch(data) {
+        try {
+            const ghRes = await fetch('https://api.github.com/repos/chernandezweb/iptv-proxy/commits?per_page=15');
+            if (!ghRes.ok) return;
+            const ghList = await ghRes.json();
+            if (!Array.isArray(ghList) || ghList.length === 0) return;
+
+            const latestSHA = (ghList[0].sha || '').substring(0, 7);
+            const current = (data.current_commit || '').substring(0, 7);
+
+            data.latest_commit = latestSHA;
+            data.latest_message = (ghList[0].commit && ghList[0].commit.message ? ghList[0].commit.message.split('\n')[0] : '');
+            data.latest_date = ghList[0].commit && ghList[0].commit.author ? ghList[0].commit.author.date : '';
+
+            let foundIdx = -1;
+            for (let i = 0; i < ghList.length; i++) {
+                const s = (ghList[i].sha || '').substring(0, 7);
+                if (current && (s === current || ghList[i].sha.startsWith(current) || current.startsWith(s))) {
+                    foundIdx = i;
+                    break;
+                }
+            }
+
+            if (foundIdx === 0) {
+                data.pending_commits = [];
+                data.behind_count = 0;
+                data.is_up_to_date = true;
+            } else if (foundIdx > 0) {
+                data.pending_commits = ghList.slice(0, foundIdx).map(item => ({
+                    sha: (item.sha || '').substring(0, 7),
+                    message: (item.commit && item.commit.message ? item.commit.message.split('\n')[0] : ''),
+                    date: item.commit && item.commit.author ? item.commit.author.date : ''
+                }));
+                data.behind_count = data.pending_commits.length;
+                data.is_up_to_date = false;
+            } else {
+                data.pending_commits = ghList.map(item => ({
+                    sha: (item.sha || '').substring(0, 7),
+                    message: (item.commit && item.commit.message ? item.commit.message.split('\n')[0] : ''),
+                    date: item.commit && item.commit.author ? item.commit.author.date : ''
+                }));
+                data.behind_count = data.pending_commits.length;
+                data.is_up_to_date = false;
+            }
+            data.check_failed = false;
+        } catch (_) {}
+    }
+
     function updateHeaderBadgeUI(data) {
         const badge = document.getElementById('updateHeaderBadge');
         const btn = document.getElementById('updateHeaderBtn');
         if (!badge) return;
 
-        if (data && data.is_up_to_date) {
+        if (!data || data.check_failed) {
+            badge.style.display = 'none';
+            if (btn) btn.title = 'Check for updates from GitHub';
+            return;
+        }
+
+        if (data.is_up_to_date) {
             badge.style.display = 'inline-flex';
             badge.textContent = '✓ Up to date';
             badge.style.background = 'rgba(34, 197, 94, 0.15)';
@@ -3114,7 +3168,7 @@ services:<br>
             badge.style.border = '1px solid rgba(34, 197, 94, 0.3)';
             badge.style.fontWeight = '600';
             if (btn) btn.title = `Running latest version (${data.current_commit || 'master'})`;
-        } else if (data && (data.behind_count > 0 || !data.is_up_to_date)) {
+        } else if (data.behind_count > 0 || !data.is_up_to_date) {
             const count = data.behind_count || 1;
             badge.style.display = 'inline-flex';
             badge.textContent = `${count} new`;
@@ -3135,6 +3189,11 @@ services:<br>
             const data = await res.json();
             currentVersionInfo = data;
             latestUpdateCommand = data.update_command || latestUpdateCommand;
+
+            if (data.check_failed || !data.latest_commit || (data.is_up_to_date && !data.latest_message)) {
+                await enrichVersionWithBrowserFetch(data);
+            }
+
             updateHeaderBadgeUI(data);
         } catch (_) {}
     }
@@ -3159,6 +3218,11 @@ services:<br>
             const data = await res.json();
             currentVersionInfo = data;
             latestUpdateCommand = data.update_command || latestUpdateCommand;
+
+            if (data.check_failed || !data.latest_commit || (data.is_up_to_date && !data.latest_message)) {
+                await enrichVersionWithBrowserFetch(data);
+            }
+
             updateHeaderBadgeUI(data);
 
             const isUpToDate = !!data.is_up_to_date;

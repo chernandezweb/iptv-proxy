@@ -19,6 +19,8 @@ services:
       #M3U_URL: "http://odm391.xyz/get.php?username=2XM6XBW&password=8655X1C&type=m3u_plus&output=m3u8"
       # Port to expose the IPTVs endpoints
       PORT: 8080
+      # Directory where filters.json and provider.json are persisted
+      DATA_DIR: "/data"
       # Hostname or IP to expose the IPTVs endpoints (for machine not for docker)
       HOSTNAME: "0.0.0.0"
       GIN_MODE: release

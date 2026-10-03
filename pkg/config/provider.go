@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -136,9 +137,9 @@ func (p *Provider) Load() {
 	file, err := os.Open(p.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Println("[iptv-proxy] provider.json not found, using configuration from flags/environment")
+			log.Printf("[iptv-proxy] provider file not found at %s, using configuration from flags/environment", p.Path)
 		} else {
-			log.Printf("[iptv-proxy] error opening provider.json: %v", err)
+			log.Printf("[iptv-proxy] error opening provider file at %s: %v", p.Path, err)
 		}
 		return
 	}
@@ -310,7 +311,18 @@ func (p *Provider) Save(data ProviderData) error {
 		return err
 	}
 
-	return ioutil.WriteFile(p.Path, bytes, 0644)
+	dir := filepath.Dir(p.Path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[iptv-proxy] error creating directory %s for provider: %v", dir, err)
+	}
+
+	err = ioutil.WriteFile(p.Path, bytes, 0644)
+	if err != nil {
+		log.Printf("[iptv-proxy] error writing provider file at %s: %v", p.Path, err)
+		return err
+	}
+	log.Printf("[iptv-proxy] Saved provider settings to %s successfully (%d providers)", p.Path, len(p.Data.Providers))
+	return nil
 }
 
 // GetData returns the current provider settings thread-safely.

@@ -125,8 +125,12 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 			dataDir = "."
 		}
 	}
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Printf("[iptv-proxy] Warning: failed to ensure dataDir %s: %v", dataDir, err)
+	}
 	filtersPath := filepath.Join(dataDir, "filters.json")
 	providerPath := filepath.Join(dataDir, "provider.json")
+	log.Printf("[iptv-proxy] Storage directory configured: %s (filters: %s, provider: %s)", dataDir, filtersPath, providerPath)
 	cfg.ProxyConfig.Filters = config.NewFilters(filtersPath)
 	cfg.ProxyConfig.Provider = config.NewProvider(providerPath, config.ProviderData{
 		XtreamBaseURL:  cfgData.XtreamBaseURL,

@@ -7,5 +7,8 @@ COPY . .
 RUN GO111MODULE=off CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o iptv-proxy .
 
 FROM alpine:3
+RUN apk add --no-cache ca-certificates && mkdir -p /data
+ENV DATA_DIR=/data
+VOLUME ["/data"]
 COPY --from=0  /go/src/github.com/pierre-emmanuelJ/iptv-proxy/iptv-proxy /
 ENTRYPOINT ["/iptv-proxy"]

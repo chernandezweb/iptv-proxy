@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -41,9 +42,9 @@ func (f *Filters) Load() {
 	file, err := os.Open(f.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Println("[iptv-proxy] filters.json not found, using empty filters (allowing all)")
+			log.Printf("[iptv-proxy] filters file not found at %s, using empty filters (allowing all)", f.Path)
 		} else {
-			log.Printf("[iptv-proxy] error opening filters.json: %v", err)
+			log.Printf("[iptv-proxy] error opening filters file at %s: %v", f.Path, err)
 		}
 		return
 	}
@@ -51,15 +52,16 @@ func (f *Filters) Load() {
 
 	bytes, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Printf("[iptv-proxy] error reading filters.json: %v", err)
+		log.Printf("[iptv-proxy] error reading filters file at %s: %v", f.Path, err)
 		return
 	}
 
 	if err := json.Unmarshal(bytes, &f.Data); err != nil {
-		log.Printf("[iptv-proxy] error parsing filters.json: %v", err)
+		log.Printf("[iptv-proxy] error parsing filters file at %s: %v", f.Path, err)
 		return
 	}
-	log.Println("[iptv-proxy] Loaded filters.json successfully")
+	log.Printf("[iptv-proxy] Loaded filters successfully from %s (%d live, %d vod, %d series allowed)",
+		f.Path, len(f.Data.AllowedLiveCategories), len(f.Data.AllowedVODCategories), len(f.Data.AllowedSeriesCategories))
 }
 
 func (f *Filters) Save(data FilterData) error {
@@ -73,7 +75,19 @@ func (f *Filters) Save(data FilterData) error {
 		return err
 	}
 
-	return ioutil.WriteFile(f.Path, bytes, 0644)
+	dir := filepath.Dir(f.Path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[iptv-proxy] error creating directory %s for filters: %v", dir, err)
+	}
+
+	err = ioutil.WriteFile(f.Path, bytes, 0644)
+	if err != nil {
+		log.Printf("[iptv-proxy] error writing filters file at %s: %v", f.Path, err)
+		return err
+	}
+	log.Printf("[iptv-proxy] Saved filters to %s successfully (%d live, %d vod, %d series allowed)",
+		f.Path, len(f.Data.AllowedLiveCategories), len(f.Data.AllowedVODCategories), len(f.Data.AllowedSeriesCategories))
+	return nil
 }
 
 func (f *Filters) IsAllowed(categoryType string, categoryName string) bool {

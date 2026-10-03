@@ -182,7 +182,68 @@ func (p *Provider) Load() {
 	file, err := os.Open(p.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("[iptv-proxy] provider file not found at %s, using configuration from flags/environment", p.Path)
+			log.Printf("[iptv-proxy] provider file not found at %s, initializing from flags/environment", p.Path)
+			// Import initial SOCKS proxy settings from environment if available
+			envProxy := os.Getenv("ALL_PROXY")
+			if envProxy == "" {
+				envProxy = os.Getenv("all_proxy")
+			}
+			if envProxy == "" {
+				envProxy = os.Getenv("HTTP_PROXY")
+			}
+			if envProxy == "" {
+				envProxy = os.Getenv("http_proxy")
+			}
+			if envProxy != "" {
+				if parsed, err := url.Parse(envProxy); err == nil {
+					port := 1080
+					if h, portStr, errSplit := net.SplitHostPort(parsed.Host); errSplit == nil {
+						p.Data.SocksProxy.Host = h
+						if pInt, errConv := strconv.Atoi(portStr); errConv == nil {
+							port = pInt
+						}
+					} else {
+						p.Data.SocksProxy.Host = parsed.Host
+					}
+					p.Data.SocksProxy.Port = port
+					p.Data.SocksProxy.Type = parsed.Scheme
+					if p.Data.SocksProxy.Type == "" {
+						p.Data.SocksProxy.Type = "socks5"
+					}
+					if parsed.User != nil {
+						p.Data.SocksProxy.Username = parsed.User.Username()
+						p.Data.SocksProxy.Password, _ = parsed.User.Password()
+					}
+					p.Data.SocksProxy.Enabled = true
+				}
+			}
+
+			if len(p.Data.Providers) == 0 && p.Data.XtreamBaseURL != "" {
+				p.Data.Providers = []ProviderItem{
+					{
+						ID:             "provider_1",
+						Name:           "Primary Provider",
+						Enabled:        true,
+						XtreamBaseURL:  p.Data.XtreamBaseURL,
+						BackupURLs:     p.Data.BackupURLs,
+						XtreamUser:     p.Data.XtreamUser,
+						XtreamPassword: p.Data.XtreamPassword,
+						Referer:        p.Data.Referer,
+						UserAgent:      p.Data.UserAgent,
+					},
+				}
+			}
+
+			if p.Data.XtreamBaseURL != "" || p.Data.SocksProxy.Host != "" || len(p.Data.Providers) > 0 {
+				d := p.Data
+				go func() {
+					if errSave := p.Save(d); errSave != nil {
+						log.Printf("[iptv-proxy] Warning: failed to auto-save initial provider.json: %v", errSave)
+					} else {
+						log.Printf("[iptv-proxy] Auto-saved initial provider and SOCKS5 settings to %s", p.Path)
+					}
+				}()
+			}
 		} else {
 			log.Printf("[iptv-proxy] error opening provider file at %s: %v", p.Path, err)
 		}

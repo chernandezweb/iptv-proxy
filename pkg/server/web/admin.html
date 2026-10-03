@@ -3486,6 +3486,33 @@ services:<br>
                 }
             }
 
+            // Poll live update logs from updater container
+            if (elapsed % 2 === 0 && !onlineDetected) {
+                try {
+                    const lRes = await fetch('/admin/api/update/logs', { cache: 'no-store' });
+                    if (lRes.ok) {
+                        const lData = await lRes.json();
+                        if (lData.found && lData.logs) {
+                            let logBox = document.getElementById('updateLiveLogBox');
+                            if (!logBox && desc) {
+                                logBox = document.createElement('pre');
+                                logBox.id = 'updateLiveLogBox';
+                                logBox.style = 'margin-top:0.75rem; max-height:140px; overflow-y:auto; background:#0b0f19; border:1px solid var(--border); border-radius:6px; padding:0.5rem; font-family:monospace; font-size:0.75rem; color:#38bdf8; text-align:left; white-space:pre-wrap;';
+                                desc.parentNode.appendChild(logBox);
+                            }
+                            if (logBox) {
+                                logBox.textContent = lData.logs;
+                                logBox.scrollTop = logBox.scrollHeight;
+                            }
+                            if (lData.logs.includes('ERROR:')) {
+                                if (title) title.innerHTML = '⚠️ Build Error Detected';
+                                if (desc) desc.innerHTML = 'An issue occurred during build. Check logs above or run manual command on your VPS:';
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
+
             if (elapsed >= 10) {
                 try {
                     const testRes = await fetch('/admin/api/version', { cache: 'no-store' });
@@ -3519,13 +3546,14 @@ services:<br>
             }
 
             if (elapsed >= 120 && !onlineDetected) {
-                // DO NOT stop the interval! Just update message and offer manual reload button
+                // DO NOT stop the interval! Just update message and offer manual reload & copy buttons
                 if (title && !title.textContent.includes('Still In Progress')) {
                     title.innerHTML = '⏳ Docker Build Still In Progress...';
                     desc.innerHTML = `Compiling Go in Alpine can take ~2-3 minutes on single-core VPS servers.<br>
                     <strong>The page will automatically reload the moment the new build is ready.</strong><br>
-                    <div style="margin-top:0.75rem;">
+                    <div style="margin-top:0.75rem; display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
                         <button class="btn btn-secondary" onclick="window.location.reload()" style="font-size:0.8rem; padding:0.35rem 0.75rem;">🔄 Reload Page Now</button>
+                        <button class="btn btn-secondary" onclick="copyUpdateCommand()" style="font-size:0.8rem; padding:0.35rem 0.75rem;">📋 Copy Terminal Command</button>
                     </div>`;
                 }
             }

@@ -110,6 +110,7 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
 	admin.GET("/api/version", c.adminGetVersion)
 	admin.POST("/api/update", c.adminTriggerUpdate)
+	admin.GET("/api/update/logs", c.adminGetUpdateLogs)
 	admin.GET("/api/logs", c.adminGetLogs)
 
 	// Static files from embedded FS
@@ -1324,49 +1325,58 @@ func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
 for p in %s; do
   if [ -d "$p/.git" ]; then
     cd "$p" || continue
+    LOG="$p/data/update.log"
+    [ ! -d "$p/data" ] && LOG="/tmp/iptv_update.log"
+    exec > "$LOG" 2>&1
+    echo "[updater] Found repository at $p"
     git config --global --add safe.directory "$p" 2>/dev/null || true
-    git fetch origin master 2>/dev/null || true
-    git reset --hard origin/master 2>/dev/null || git pull origin master || true
+    echo "[updater] Fetching latest changes from origin..."
+    git fetch origin master 2>&1 || git fetch origin 2>&1 || true
+    echo "[updater] Updating repository to latest commit..."
+    git reset --hard origin/master 2>&1 || git pull origin master 2>&1 || true
     if [ -d "$p/data" ]; then
       git rev-parse HEAD > "$p/data/commit.txt" 2>/dev/null || true
     fi
+    echo "[updater] Building and restarting Docker containers..."
     if command -v docker >/dev/null 2>&1; then
-      docker compose up -d --build || docker-compose up -d --build
+      docker compose up -d --build 2>&1 || docker-compose up -d --build 2>&1
     elif command -v docker-compose >/dev/null 2>&1; then
-      docker-compose up -d --build
+      docker-compose up -d --build 2>&1
+    else
+      echo "[updater] ERROR: Neither docker nor docker-compose found in PATH"
+      exit 1
     fi
+    echo "[updater] Update completed successfully!"
     exit 0
   fi
 done
+echo "[updater] ERROR: No valid git repository found in candidate paths"
 exit 1`, searchPaths)
 
 	createReq := map[string]interface{}{
 		"Image":      imageToUse,
 		"Entrypoint": []string{"sh", "-c"},
 		"Cmd": []string{
-			fmt.Sprintf(`NSENTER=""
-if command -v nsenter >/dev/null 2>&1; then
-  NSENTER="nsenter"
+			fmt.Sprintf(`if nsenter -V >/dev/null 2>&1; then
+  nsenter -t 1 -m -u -n -i -p -- sh -c %s
 elif [ -x /host/usr/bin/nsenter ]; then
-  NSENTER="/host/usr/bin/nsenter"
+  chroot /host /usr/bin/nsenter -t 1 -m -u -n -i -p -- sh -c %s
 elif [ -x /host/bin/nsenter ]; then
-  NSENTER="/host/bin/nsenter"
-fi
-
-if [ -n "$NSENTER" ]; then
-  $NSENTER -t 1 -m -u -n -i -p -- sh -c %s
+  chroot /host /bin/nsenter -t 1 -m -u -n -i -p -- sh -c %s
 else
   chroot /host sh -c %s
-fi`, strconv.Quote("exec > /tmp/iptv_update.log 2>&1; " + script), strconv.Quote("mount -t proc proc /proc 2>/dev/null || true; exec > /tmp/iptv_update.log 2>&1; " + script)),
+fi`, strconv.Quote(script), strconv.Quote(script), strconv.Quote(script), strconv.Quote("mount -t proc proc /proc 2>/dev/null || true; " + script)),
 		},
 		"HostConfig": map[string]interface{}{
 			"PidMode": "host",
 			"Binds": []string{
-				"/:/host:rw",
+				"/:/host:rw,rslave",
 				"/var/run/docker.sock:/var/run/docker.sock",
+				"/var/run/docker.sock:/host/var/run/docker.sock",
+				"/run/docker.sock:/host/run/docker.sock",
 			},
 			"Privileged": true,
-			"AutoRemove": true,
+			"AutoRemove": false,
 		},
 	}
 
@@ -1439,6 +1449,28 @@ fi`, strconv.Quote("exec > /tmp/iptv_update.log 2>&1; " + script), strconv.Quote
 		"supported": true,
 		"status":    "started",
 		"message":   "1-Click update started successfully! Pulling latest code and rebuilding container...",
+	})
+}
+
+func (c *Config) adminGetUpdateLogs(ctx *gin.Context) {
+	candidates := []string{
+		filepath.Join(c.DataDir, "update.log"),
+		"/data/update.log",
+		"/tmp/iptv_update.log",
+		"/host/tmp/iptv_update.log",
+	}
+	for _, p := range candidates {
+		if data, err := ioutil.ReadFile(p); err == nil && len(data) > 0 {
+			ctx.JSON(http.StatusOK, gin.H{
+				"found": true,
+				"logs":  string(data),
+			})
+			return
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"found": false,
+		"logs":  "",
 	})
 }
 

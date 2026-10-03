@@ -36,24 +36,24 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 		}
 
 		// 1. Check userManager (from users.json)
-		if c.userManager != nil {
+		if c.userManager != nil && len(c.userManager.GetUsers()) > 0 {
 			if u, ok := c.userManager.Authenticate(user, pass); ok && u.Enabled {
 				ctx.Set("admin_user", u.Username)
 				ctx.Next()
 				return
 			}
+		} else {
+			// 2. Initial setup fallback (admin / admin) if userManager has no users yet
+			if user == "admin" && pass == "admin" {
+				ctx.Set("admin_user", "admin")
+				ctx.Next()
+				return
+			}
 		}
 
-		// 2. Check c.User and c.Password (from env or flags)
+		// 3. Check c.User and c.Password (from env or flags)
 		if c.User.String() != "" && user == c.User.String() && pass == c.Password.String() {
 			ctx.Set("admin_user", user)
-			ctx.Next()
-			return
-		}
-
-		// 3. Initial setup fallback (admin / admin)
-		if user == "admin" && pass == "admin" {
-			ctx.Set("admin_user", "admin")
 			ctx.Next()
 			return
 		}

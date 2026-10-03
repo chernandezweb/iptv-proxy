@@ -1063,28 +1063,56 @@ func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
 		delResp.Body.Close()
 	}
 
-	// Discover host repo path by inspecting container mounts for /data
+	// Discover host repo path and current container image by inspecting running container
 	var repoCandidates []string
-	inspResp, err := client.Get(fmt.Sprintf("%s/containers/iptv-proxy/json", apiBase))
-	if err == nil && inspResp.StatusCode == http.StatusOK {
-		var insp struct {
-			Mounts []struct {
-				Source      string `json:"Source"`
-				Destination string `json:"Destination"`
-			} `json:"Mounts"`
-		}
-		if json.NewDecoder(inspResp.Body).Decode(&insp) == nil {
-			for _, m := range insp.Mounts {
-				if m.Destination == "/data" && m.Source != "" {
-					dir := filepath.Dir(m.Source)
-					if dir != "" && dir != "/" {
-						repoCandidates = append(repoCandidates, dir)
+	var imageToUse string
+
+	containerCandidates := []string{"iptv-proxy"}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		containerCandidates = append([]string{h}, containerCandidates...)
+	}
+
+	for _, name := range containerCandidates {
+		inspResp, err := client.Get(fmt.Sprintf("%s/containers/%s/json", apiBase, name))
+		if err == nil && inspResp.StatusCode == http.StatusOK {
+			var insp struct {
+				Image  string `json:"Image"`
+				Config struct {
+					Image string `json:"Image"`
+				} `json:"Config"`
+				Mounts []struct {
+					Source      string `json:"Source"`
+					Destination string `json:"Destination"`
+				} `json:"Mounts"`
+			}
+			if json.NewDecoder(inspResp.Body).Decode(&insp) == nil {
+				if insp.Config.Image != "" {
+					imageToUse = insp.Config.Image
+				} else if insp.Image != "" {
+					imageToUse = insp.Image
+				}
+				for _, m := range insp.Mounts {
+					if m.Destination == "/data" && m.Source != "" {
+						dir := filepath.Dir(m.Source)
+						if dir != "" && dir != "/" {
+							repoCandidates = append(repoCandidates, dir)
+						}
+						break
 					}
-					break
 				}
 			}
+			inspResp.Body.Close()
+			if imageToUse != "" {
+				break
+			}
 		}
-		inspResp.Body.Close()
+		if inspResp != nil {
+			inspResp.Body.Close()
+		}
+	}
+
+	if imageToUse == "" {
+		imageToUse = "alpine:latest"
 	}
 
 	repoCandidates = append(repoCandidates,
@@ -1111,7 +1139,7 @@ done
 exit 1`, searchPaths)
 
 	createReq := map[string]interface{}{
-		"Image": "alpine:3",
+		"Image": imageToUse,
 		"Cmd": []string{
 			"sh", "-c",
 			fmt.Sprintf("chroot /host sh -c %s", strconv.Quote(script)),
@@ -1138,10 +1166,16 @@ exit 1`, searchPaths)
 	}
 	defer resp.Body.Close()
 
-	// If alpine:3 is not present in local cache, pull it and retry
+	// If image is not present in local cache, pull it and retry
 	if resp.StatusCode == http.StatusNotFound {
-		pullResp, pErr := client.Post(fmt.Sprintf("%s/images/create?fromImage=alpine:3", apiBase), "application/json", nil)
+		pullURL := fmt.Sprintf("%s/images/create?fromImage=alpine&tag=latest", apiBase)
+		if strings.Contains(imageToUse, ":") {
+			parts := strings.SplitN(imageToUse, ":", 2)
+			pullURL = fmt.Sprintf("%s/images/create?fromImage=%s&tag=%s", apiBase, url.QueryEscape(parts[0]), url.QueryEscape(parts[1]))
+		}
+		pullResp, pErr := client.Post(pullURL, "application/json", nil)
 		if pErr == nil {
+			io.Copy(ioutil.Discard, pullResp.Body)
 			pullResp.Body.Close()
 			resp2, err2 := client.Post(fmt.Sprintf("%s/containers/create?name=iptv_proxy_updater", apiBase), "application/json", bytes.NewReader(bodyBytes))
 			if err2 == nil {

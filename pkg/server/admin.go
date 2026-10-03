@@ -25,6 +25,31 @@ import (
 //go:embed web/*
 var webFS embed.FS
 
+type AdminCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (c *Config) getAdminCredentials() AdminCredentials {
+	if c.adminAuthPath != "" {
+		if data, err := ioutil.ReadFile(c.adminAuthPath); err == nil {
+			var creds AdminCredentials
+			if json.Unmarshal(data, &creds) == nil && creds.Username != "" && creds.Password != "" {
+				return creds
+			}
+		}
+	}
+	user := c.User.String()
+	pass := c.Password.String()
+	if user == "" {
+		user = "admin"
+	}
+	if pass == "" {
+		pass = "admin"
+	}
+	return AdminCredentials{Username: user, Password: pass}
+}
+
 func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin := r.Group("/admin")
 	admin.Use(func(ctx *gin.Context) {
@@ -35,32 +60,30 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 			return
 		}
 
-		// 1. Check userManager (from users.json)
-		if c.userManager != nil && len(c.userManager.GetUsers()) > 0 {
-			if u, ok := c.userManager.Authenticate(user, pass); ok && u.Enabled {
-				ctx.Set("admin_user", u.Username)
-				ctx.Next()
-				return
-			}
-		} else {
-			// 2. Initial setup fallback (admin / admin) if userManager has no users yet
-			if user == "admin" && pass == "admin" {
-				ctx.Set("admin_user", "admin")
-				ctx.Next()
-				return
-			}
-		}
-
-		// 3. Check c.User and c.Password (from env or flags)
-		if c.User.String() != "" && user == c.User.String() && pass == c.Password.String() {
+		// 1. Check dedicated admin credentials
+		creds := c.getAdminCredentials()
+		if user == creds.Username && pass == creds.Password {
 			ctx.Set("admin_user", user)
 			ctx.Next()
 			return
 		}
 
+		// 2. Also allow any player user in userManager
+		if c.userManager != nil {
+			if u, ok := c.userManager.Authenticate(user, pass); ok && u.Enabled {
+				ctx.Set("admin_user", u.Username)
+				ctx.Next()
+				return
+			}
+		}
+
 		ctx.Header("WWW-Authenticate", `Basic realm="IPTV Proxy Admin"`)
 		ctx.AbortWithStatus(http.StatusUnauthorized)
 	})
+
+	// Admin Authentication Management
+	admin.GET("/api/admin-auth", c.adminGetAdminAuth)
+	admin.POST("/api/admin-auth", c.adminSaveAdminAuth)
 
 	// API endpoints
 	admin.GET("/api/categories", c.adminGetCategories)
@@ -1139,4 +1162,45 @@ exit 1`, searchPaths)
 		"message":   "1-Click update started successfully! Pulling latest code and rebuilding container...",
 	})
 }
+
+func (c *Config) adminGetAdminAuth(ctx *gin.Context) {
+	creds := c.getAdminCredentials()
+	ctx.JSON(http.StatusOK, gin.H{
+		"username": creds.Username,
+	})
+}
+
+func (c *Config) adminSaveAdminAuth(ctx *gin.Context) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Username and password cannot be empty"})
+		return
+	}
+
+	creds := AdminCredentials{
+		Username: strings.TrimSpace(req.Username),
+		Password: strings.TrimSpace(req.Password),
+	}
+
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed encoding admin credentials"})
+		return
+	}
+
+	if err := ioutil.WriteFile(c.adminAuthPath, data, 0600); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed writing admin credentials: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"success":  true,
+		"username": creds.Username,
+		"message":  "Admin credentials updated successfully! Use your new username and password next time you log in.",
+	})
+}
+
 

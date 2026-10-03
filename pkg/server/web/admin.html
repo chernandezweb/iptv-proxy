@@ -1354,14 +1354,47 @@
 
     <!-- USERS TAB -->
     <div id="usersTab" class="tab-content">
+        <!-- Web Admin Platform Credentials Card -->
+        <div style="background:var(--bg-card); border:1px solid rgba(99, 102, 241, 0.4); border-radius:var(--radius); padding:1.25rem; margin-bottom:2rem; box-shadow:0 4px 20px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+                <div>
+                    <h3 style="margin:0 0 0.25rem 0; font-size:1.15rem; font-weight:700; display:flex; align-items:center; gap:0.5rem; color:#fff;">
+                        🔐 Web Admin Platform Credentials
+                    </h3>
+                    <p class="subtitle" style="margin:0; font-size:0.85rem;">
+                        The username &amp; password required to log in to this web admin management panel (<code>/admin/</code>).
+                    </p>
+                </div>
+            </div>
+            
+            <form id="adminAuthForm" onsubmit="saveAdminCredentials(event)" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)) auto; gap:1rem; align-items:flex-end;">
+                <div class="form-group" style="margin:0;">
+                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">Admin Username</label>
+                    <input type="text" id="adminAuthUser" required placeholder="admin" style="background:#0b0f19;">
+                </div>
+                <div class="form-group" style="margin:0; position:relative;">
+                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">New Admin Password</label>
+                    <div style="position:relative;">
+                        <input type="password" id="adminAuthPass" required placeholder="Enter new admin password" style="background:#0b0f19; padding-right:2.5rem;">
+                        <button type="button" onclick="togglePasswordVisibility('adminAuthPass')" style="position:absolute; right:0.5rem; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1rem; padding:0.25rem;">👁️</button>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit" class="btn" id="saveAdminAuthBtn" style="padding:0.7rem 1.25rem; font-weight:700; height:42px; display:inline-flex; align-items:center; gap:0.4rem; justify-content:center;">
+                        💾 Save Admin Credentials
+                    </button>
+                </div>
+            </form>
+        </div>
+
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
             <div>
-                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">Player Accounts &amp; Connection Limits</h2>
-                <p class="subtitle">Create multi-user player accounts with credentials and enforce concurrent connection limits per user.</p>
+                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">📺 IPTV Player Accounts (TiviMate / Televizo / Apps)</h2>
+                <p class="subtitle">Credentials given to users/devices to stream through this proxy with concurrent connection limits.</p>
             </div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                 <button type="button" class="btn" onclick="openUserModal(-1)">
-                    ➕ Add User
+                    ➕ Add Player Account
                 </button>
             </div>
         </div>
@@ -2197,9 +2230,65 @@
     }
 
     // ==========================================
-    // USER ACCOUNTS & CONNECTION LIMITS LOGIC
+    // WEB ADMIN CREDENTIALS & USER ACCOUNTS
     // ==========================================
+    async function loadAdminAuth() {
+        try {
+            const res = await fetch('/admin/api/admin-auth');
+            if (res.ok) {
+                const data = await res.json();
+                const userInput = document.getElementById('adminAuthUser');
+                if (userInput && data.username) {
+                    userInput.value = data.username;
+                }
+            }
+        } catch (e) {
+            console.error('Failed loading admin auth:', e);
+        }
+    }
+
+    async function saveAdminCredentials(e) {
+        e.preventDefault();
+        const userInput = document.getElementById('adminAuthUser');
+        const passInput = document.getElementById('adminAuthPass');
+        const btn = document.getElementById('saveAdminAuthBtn');
+
+        const username = userInput.value.trim();
+        const password = passInput.value.trim();
+
+        if (!username || !password) {
+            showToast('Username and password cannot be empty', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+        try {
+            const res = await fetch('/admin/api/admin-auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                showToast('✅ Admin credentials updated! Use them next time you log in.', 'success');
+                passInput.value = '';
+                passInput.placeholder = '•••••••• (Saved)';
+            } else {
+                showToast(data.error || 'Failed updating admin credentials', 'error');
+            }
+        } catch (err) {
+            showToast('Error saving admin credentials: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '💾 Save Admin Credentials';
+        }
+    }
+
     async function loadUsers() {
+        await loadAdminAuth();
         try {
             const res = await fetch('/admin/api/users');
             if (!res.ok) throw new Error('HTTP ' + res.status);

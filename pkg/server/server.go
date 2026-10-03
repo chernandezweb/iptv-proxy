@@ -77,6 +77,8 @@ type Config struct {
 	streamRoutingMap  map[string]StreamRoutingTarget
 	streamRoutingLock sync.RWMutex
 
+	adminAuthPath string
+
 	refreshing      map[string]bool
 	refreshingMutex sync.Mutex
 }
@@ -133,7 +135,9 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	filtersPath := filepath.Join(dataDir, "filters.json")
 	providerPath := filepath.Join(dataDir, "provider.json")
 	usersPath := filepath.Join(dataDir, "users.json")
-	log.Printf("[iptv-proxy] Storage directory configured: %s (filters: %s, provider: %s, users: %s)", dataDir, filtersPath, providerPath, usersPath)
+	adminAuthPath := filepath.Join(dataDir, "admin.json")
+	cfg.adminAuthPath = adminAuthPath
+	log.Printf("[iptv-proxy] Storage directory configured: %s (filters: %s, provider: %s, users: %s, admin: %s)", dataDir, filtersPath, providerPath, usersPath, adminAuthPath)
 	cfg.ProxyConfig.Filters = config.NewFilters(filtersPath)
 	cfg.ProxyConfig.Provider = config.NewProvider(providerPath, config.ProviderData{
 		XtreamBaseURL:  cfgData.XtreamBaseURL,

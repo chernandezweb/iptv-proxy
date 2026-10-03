@@ -42,6 +42,7 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
+	admin.GET("/api/version", c.adminGetVersion)
 
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
@@ -902,6 +903,44 @@ func (c *Config) adminTestVpnProxy(ctx *gin.Context) {
 		"ip":       ipInfo.IP,
 		"latency":  latencyMs,
 		"message":  fmt.Sprintf("Proxy connected successfully! Outbound IP: %s (%dms)", ipInfo.IP, latencyMs),
+	})
+}
+
+func (c *Config) adminGetVersion(ctx *gin.Context) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx.Request.Context(), "GET", "https://api.github.com/repos/chernandezweb/iptv-proxy/commits/master", nil)
+	req.Header.Set("User-Agent", "iptv-proxy")
+
+	type ghCommitResp struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Message string `json:"message"`
+			Author  struct {
+				Date string `json:"date"`
+			} `json:"author"`
+		} `json:"commit"`
+	}
+
+	var gh ghCommitResp
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		json.NewDecoder(resp.Body).Decode(&gh)
+	}
+
+	shortSHA := ""
+	if len(gh.SHA) >= 7 {
+		shortSHA = gh.SHA[:7]
+	}
+
+	msgFirstLine := strings.Split(gh.Commit.Message, "\n")[0]
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"repo":           "chernandezweb/iptv-proxy",
+		"latest_commit":  shortSHA,
+		"latest_message": msgFirstLine,
+		"latest_date":    gh.Commit.Author.Date,
+		"update_command": "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
 	})
 }
 

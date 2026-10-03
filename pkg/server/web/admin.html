@@ -1057,6 +1057,9 @@
                 <span class="status-dot"></span>
                 <span id="statusText">Checking...</span>
             </div>
+            <button class="btn btn-secondary" onclick="openUpdateModal()" title="Check for updates from GitHub">
+                ⬆️ Updates
+            </button>
             <button class="btn btn-secondary" onclick="reloadAll()" title="Reload data from server">
                 🔄 Refresh
             </button>
@@ -1424,6 +1427,7 @@
         <div id="streamsListContainer">
             <div class="loading-state">
                 <span class="spinner"></span> Loading stream relay info...
+            </div>
         </div>
     </div>
 
@@ -1547,6 +1551,29 @@
 <div class="toast" id="toast">
     <span id="toastIcon">✅</span>
     <span id="toastMsg">Action completed successfully</span>
+</div>
+
+<!-- UPDATE MODAL -->
+<div class="modal-overlay" id="updateModal" style="display:none;" onclick="if(event.target===this)closeUpdateModal()">
+    <div class="modal-container" style="max-width: 540px;">
+        <div class="modal-header">
+            <h3 style="margin:0; font-size:1.15rem; display:flex; align-items:center; gap:0.5rem;">
+                ⬆️ System Version &amp; Updates
+            </h3>
+            <button type="button" class="btn btn-secondary" onclick="closeUpdateModal()" style="padding:0.35rem 0.65rem;">✕</button>
+        </div>
+        <div class="modal-body" id="updateModalBody">
+            <div class="loading-state">
+                <span class="spinner"></span> Checking GitHub repository for latest commits...
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeUpdateModal()">Close</button>
+            <button type="button" class="btn" id="copyUpdateCmdBtn" onclick="copyUpdateCommand()" style="display:none;">
+                📋 Copy 1-Line Update Command
+            </button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -2707,6 +2734,85 @@
             btn.disabled = false;
             btn.innerHTML = '🧪 Test Proxy &amp; Check IP';
         }
+    }
+
+    let latestUpdateCommand = 'cd ~/iptv-proxy && git pull origin master && docker compose up -d --build';
+
+    async function openUpdateModal() {
+        const modal = document.getElementById('updateModal');
+        const body = document.getElementById('updateModalBody');
+        const copyBtn = document.getElementById('copyUpdateCmdBtn');
+        modal.style.display = 'flex';
+        copyBtn.style.display = 'none';
+        body.innerHTML = `
+            <div class="loading-state">
+                <span class="spinner"></span> Checking GitHub repository (chernandezweb/iptv-proxy)...
+            </div>
+        `;
+
+        try {
+            const res = await fetch('/admin/api/version');
+            if (!res.ok) throw new Error('Failed to fetch version info');
+            const data = await res.json();
+            latestUpdateCommand = data.update_command || latestUpdateCommand;
+
+            body.innerHTML = `
+                <div style="background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem;">
+                    <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Latest Release on GitHub</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:var(--text); margin-top:0.25rem;">
+                        Commit <code style="color:var(--primary);">${escapeHtml(data.latest_commit || 'master')}</code>
+                    </div>
+                    <div style="font-size:0.9rem; color:#cbd5e1; margin-top:0.4rem; line-height:1.4;">
+                        ${escapeHtml(data.latest_message || 'Latest updates applied')}
+                    </div>
+                    ${data.latest_date ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">Published: ${new Date(data.latest_date).toLocaleString()}</div>` : ''}
+                </div>
+
+                <div style="margin-bottom:0.75rem; font-size:0.875rem; font-weight:600; color:var(--text);">
+                    To apply the latest update on your VPS:
+                </div>
+                <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.85rem; font-family:monospace; font-size:0.825rem; color:#38bdf8; word-break:break-all;">
+                    ${escapeHtml(latestUpdateCommand)}
+                </div>
+
+                <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:0.85rem; margin-top:1rem; font-size:0.8rem; color:#cbd5e1;">
+                    💡 <strong>Automated Updates Note:</strong> Because all your settings, providers, accounts, and filters live in <code>./data/</code>, running an update will <strong>never overwrite or lose your settings</strong>.
+                </div>
+            `;
+            copyBtn.style.display = 'inline-flex';
+        } catch (e) {
+            body.innerHTML = `
+                <div style="color:var(--danger); padding:1rem; text-align:center;">
+                    Error checking version: ${escapeHtml(e.message)}
+                </div>
+            `;
+        }
+    }
+
+    function closeUpdateModal() {
+        document.getElementById('updateModal').style.display = 'none';
+    }
+
+    function copyUpdateCommand() {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(latestUpdateCommand).then(() => {
+                showToast('📋 Update command copied to clipboard!', 'success');
+            }).catch(() => {
+                fallbackCopyText(latestUpdateCommand);
+            });
+        } else {
+            fallbackCopyText(latestUpdateCommand);
+        }
+    }
+
+    function fallbackCopyText(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast('📋 Update command copied to clipboard!', 'success');
     }
 
     async function reloadAll() {

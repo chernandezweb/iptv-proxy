@@ -784,6 +784,12 @@
         <button class="tab active" id="tab-provider" onclick="switchTab('provider')">
             🌐 Providers (<span class="badge" id="provBadge">0</span>)
         </button>
+        <button class="tab" id="tab-users" onclick="switchTab('users')">
+            👥 Users (<span class="badge" id="usersBadge">0</span>)
+        </button>
+        <button class="tab" id="tab-streams" onclick="switchTab('streams')">
+            ⚡ Live Hub (<span class="badge" id="streamsBadge">0</span>)
+        </button>
         <button class="tab" id="tab-live" onclick="switchTab('live')">
             📺 Live TV <span class="badge" id="liveBadge">0</span>
         </button>
@@ -941,6 +947,50 @@
         </div>
     </div>
 
+    <!-- ADD / EDIT USER MODAL -->
+    <div id="userModal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="userModalTitle">Add User Account</h3>
+                <button type="button" class="modal-close" onclick="closeUserModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="modalUserForm" onsubmit="event.preventDefault(); saveUserFromModal();">
+                    <input type="hidden" id="modalUserId" value="">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="modalUsername">Username</label>
+                            <input type="text" id="modalUsername" placeholder="e.g. living_room or john" required autocomplete="off">
+                            <span class="help-text">The login username entered into the player app (Televizo, TiviMate, etc.).</span>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="modalUserPassword">Password</label>
+                            <div class="input-wrapper">
+                                <input type="password" id="modalUserPassword" placeholder="User password" required autocomplete="off">
+                                <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('modalUserPassword')">👁️</button>
+                            </div>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="modalUserMaxConns">Max Concurrent Streams</label>
+                            <input type="number" id="modalUserMaxConns" min="0" max="100" value="1" required>
+                            <span class="help-text">Max simultaneous streaming sessions allowed for this user. Enter <code>0</code> for unlimited.</span>
+                        </div>
+                        <div class="form-group full-width" style="margin-top:0.25rem;">
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="modalUserEnabled" checked>
+                                <span>Account Enabled (allow streaming and authentication)</span>
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
+                <button type="button" class="btn" onclick="saveUserFromModal()">💾 Save User</button>
+            </div>
+        </div>
+    </div>
+
     <!-- LIVE TV TAB -->
     <div id="liveTab" class="tab-content">
         <div class="controls">
@@ -988,6 +1038,85 @@
         </div>
         <div class="list-container" id="seriesList" style="display: none;"></div>
     </div>
+
+    <!-- USERS TAB -->
+    <div id="usersTab" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">Player Accounts &amp; Connection Limits</h2>
+                <p class="subtitle">Create multi-user player accounts with credentials and enforce concurrent connection limits per user.</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button type="button" class="btn" onclick="openUserModal(-1)">
+                    ➕ Add User
+                </button>
+            </div>
+        </div>
+
+        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-bottom: 1.5rem;">
+            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
+                🛡️ Connection Limit Enforcement &amp; Channel Switching Rollover
+            </h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
+                <div>🔄 <strong>Seamless Channel Switches:</strong> When a player switches channels from the same IP, the previous stream slot is freed immediately so the limit is never falsely breached.</div>
+                <div>🚫 <strong>Device Concurrency Protection:</strong> When maximum active connections are reached and another device/IP tries to stream, the request is rejected with <code>403 Forbidden</code>.</div>
+                <div>👤 <strong>Player Setup:</strong> Users log in to Televizo, TiviMate, or IPTV Smarters with their proxy username and password pointing to <code>http://vps:8080</code>.</div>
+            </div>
+        </div>
+
+        <div id="usersListContainer">
+            <div class="loading-state">
+                <span class="spinner"></span> Loading user accounts...
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE HUB / STREAMS TAB -->
+    <div id="streamsTab" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">Live Stream Hub &amp; Multiplexing</h2>
+                <p class="subtitle">Live channels multiplexed by the proxy. Multiple clients watching the same channel share 1 upstream connection.</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                <label class="switch-toggle" style="font-size:0.85rem; color:var(--text-muted);">
+                    <input type="checkbox" id="streamAutoRefreshCb" checked onchange="toggleStreamAutoRefresh()">
+                    <span>Auto-refresh (5s)</span>
+                </label>
+                <button type="button" class="btn btn-secondary" onclick="loadStreams()">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Metrics cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Active Relays (Upstream)</div>
+                <div id="statActiveRelays" style="font-size:1.75rem; font-weight:700; color:var(--primary); margin-top:0.35rem;">0</div>
+            </div>
+            <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Total Connected Viewers</div>
+                <div id="statTotalViewers" style="font-size:1.75rem; font-weight:700; color:var(--success); margin-top:0.35rem;">0</div>
+            </div>
+            <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Connections Saved</div>
+                <div id="statSavedConns" style="font-size:1.75rem; font-weight:700; color:#38bdf8; margin-top:0.35rem;">0</div>
+            </div>
+            <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">TS Packet Alignment</div>
+                <div style="font-size:1.05rem; font-weight:600; color:var(--success); margin-top:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+                    <span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> 188-byte MPEG-TS
+                </div>
+            </div>
+        </div>
+
+        <div id="streamsListContainer">
+            <div class="loading-state">
+                <span class="spinner"></span> Loading stream relay info...
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="toast" id="toast">
@@ -998,6 +1127,9 @@
 <script>
     let state = {
         providers: [],
+        users: [],
+        streams: [],
+        defaultUser: '',
         live: [], vod: [], series: [],
         filters: { allowed_live_categories: [], allowed_vod_categories: [], allowed_series_categories: [] },
         currentTab: 'provider',
@@ -1015,10 +1147,16 @@
         if (targetContent) targetContent.classList.add('active');
 
         const saveFiltersBtn = document.getElementById('saveFiltersBtn');
-        if (type === 'provider') {
+        if (type === 'provider' || type === 'users' || type === 'streams') {
             saveFiltersBtn.style.display = 'none';
         } else {
             saveFiltersBtn.style.display = 'inline-flex';
+        }
+
+        if (type === 'users') {
+            loadUsers();
+        } else if (type === 'streams') {
+            loadStreams();
         }
     }
 
@@ -1599,15 +1737,340 @@
         }, 3500);
     }
 
+    // ==========================================
+    // USER ACCOUNTS & CONNECTION LIMITS LOGIC
+    // ==========================================
+    async function loadUsers() {
+        try {
+            const res = await fetch('/admin/api/users');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            state.users = data.users || [];
+            state.defaultUser = data.default_user || '';
+            document.getElementById('usersBadge').innerText = state.users.length;
+            renderUsers();
+        } catch (e) {
+            console.error('Error loading users:', e);
+            document.getElementById('usersListContainer').innerHTML = `
+                <div style="padding:2rem; text-align:center; color:var(--danger);">
+                    Failed to load users: ${escapeHtml(e.message)}
+                </div>
+            `;
+        }
+    }
+
+    function renderUsers() {
+        const container = document.getElementById('usersListContainer');
+        if (!state.users || state.users.length === 0) {
+            container.innerHTML = `
+                <div style="padding:3rem 1.5rem; text-align:center; background:var(--bg-card-subtle); border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted);">
+                    <div style="font-size:2rem; margin-bottom:0.75rem;">👥</div>
+                    <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">No Player Users Configured</div>
+                    <p style="margin:0 0 1.25rem 0; font-size:0.9rem;">Add credentials to allow IPTV apps and devices to authenticate through this proxy.</p>
+                    <button type="button" class="btn" onclick="openUserModal(-1)">➕ Add Your First User</button>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+            <table class="url-list-table">
+                <thead>
+                    <tr>
+                        <th>Username &amp; Role</th>
+                        <th>Password</th>
+                        <th>Max Limit</th>
+                        <th>Active Conns</th>
+                        <th>Account Status</th>
+                        <th style="text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        state.users.forEach((u, idx) => {
+            const isDefault = (u.username === state.defaultUser);
+            const isUnlimited = (u.max_connections <= 0);
+            const limitText = isUnlimited ? '<span style="color:#38bdf8;">Unlimited</span>' : `${u.max_connections} device${u.max_connections > 1 ? 's' : ''}`;
+            const activeCount = u.active_connections || 0;
+            const activeBadge = activeCount > 0 
+                ? `<span class="url-pill online">${activeCount} active</span>` 
+                : `<span class="url-pill" style="color:var(--text-muted); background:rgba(255,255,255,0.04);">Idle</span>`;
+            
+            const isEnabled = u.enabled !== false;
+            const pwdInputId = `userPwd_${idx}`;
+
+            html += `
+                <tr>
+                    <td>
+                        <strong style="font-size:0.95rem; color:#fff;">${escapeHtml(u.username)}</strong>
+                        ${isDefault ? '<span class="url-pill active" style="margin-left:8px; font-size:0.7rem;">Default Admin</span>' : ''}
+                    </td>
+                    <td>
+                        <div style="display:inline-flex; align-items:center; gap:0.4rem;">
+                            <input type="password" id="${pwdInputId}" value="${escapeHtml(u.password)}" readonly style="background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:#cbd5e1; font-size:0.8rem; padding:0.2rem 0.5rem; width:120px; font-family:monospace;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="togglePasswordVisibility('${pwdInputId}')" title="Show/Hide">👁️</button>
+                        </div>
+                    </td>
+                    <td>${limitText}</td>
+                    <td>${activeBadge}</td>
+                    <td>
+                        <label class="switch-toggle">
+                            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleUserEnabled(${idx})">
+                            <span style="font-size:0.8rem; color:${isEnabled ? 'var(--success)' : 'var(--text-muted)'}; font-weight:600;">
+                                ${isEnabled ? 'Active' : 'Disabled'}
+                            </span>
+                        </label>
+                    </td>
+                    <td style="text-align:right;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openUserModal(${idx})">✏️ Edit</button>
+                        <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger);" onclick="deleteUser('${u.id}', '${escapeHtml(u.username)}')">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = html;
+    }
+
+    function openUserModal(index) {
+        const modal = document.getElementById('userModal');
+        const title = document.getElementById('userModalTitle');
+        const idInput = document.getElementById('modalUserId');
+        const userInput = document.getElementById('modalUsername');
+        const passInput = document.getElementById('modalUserPassword');
+        const maxInput = document.getElementById('modalUserMaxConns');
+        const enabledInput = document.getElementById('modalUserEnabled');
+
+        if (index >= 0 && state.users[index]) {
+            const u = state.users[index];
+            title.innerText = 'Edit User Account';
+            idInput.value = u.id || '';
+            userInput.value = u.username || '';
+            passInput.value = u.password || '';
+            maxInput.value = u.max_connections !== undefined ? u.max_connections : 1;
+            enabledInput.checked = (u.enabled !== false);
+        } else {
+            title.innerText = 'Add User Account';
+            idInput.value = '';
+            userInput.value = '';
+            passInput.value = '';
+            maxInput.value = '1';
+            enabledInput.checked = true;
+        }
+
+        modal.classList.add('open');
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').classList.remove('open');
+    }
+
+    async function saveUserFromModal() {
+        const id = document.getElementById('modalUserId').value.trim();
+        const username = document.getElementById('modalUsername').value.trim();
+        const password = document.getElementById('modalUserPassword').value;
+        const maxConns = parseInt(document.getElementById('modalUserMaxConns').value, 10) || 0;
+        const enabled = document.getElementById('modalUserEnabled').checked;
+
+        if (!username) {
+            showToast('Username is required', 'warning');
+            return;
+        }
+        if (!password) {
+            showToast('Password is required', 'warning');
+            return;
+        }
+
+        const payload = {
+            id: id,
+            username: username,
+            password: password,
+            max_connections: maxConns,
+            enabled: enabled
+        };
+
+        try {
+            const res = await fetch('/admin/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+
+            showToast(data.message || 'User saved successfully!', 'success');
+            closeUserModal();
+            await loadUsers();
+        } catch (e) {
+            showToast('Error saving user: ' + e.message, 'error');
+        }
+    }
+
+    async function toggleUserEnabled(index) {
+        if (!state.users[index]) return;
+        const u = state.users[index];
+        u.enabled = !u.enabled;
+
+        try {
+            const res = await fetch('/admin/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(u)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            showToast(`User ${u.username} ${u.enabled ? 'enabled' : 'disabled'}`, 'success');
+            await loadUsers();
+        } catch (e) {
+            showToast('Error updating user: ' + e.message, 'error');
+            await loadUsers();
+        }
+    }
+
+    async function deleteUser(id, username) {
+        if (!confirm(`Are you sure you want to delete user account "${username}"?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/admin/api/users/${encodeURIComponent(id)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+
+            showToast(`User "${username}" deleted`, 'success');
+            await loadUsers();
+        } catch (e) {
+            showToast('Error deleting user: ' + e.message, 'error');
+        }
+    }
+
+    // ==========================================
+    // LIVE STREAM HUB MONITORING LOGIC
+    // ==========================================
+    let streamRefreshTimer = null;
+
+    async function loadStreams() {
+        try {
+            const res = await fetch('/admin/api/streams');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            state.streams = data.relays || [];
+            
+            document.getElementById('streamsBadge').innerText = state.streams.length;
+            document.getElementById('statActiveRelays').innerText = data.total_relays || 0;
+            document.getElementById('statTotalViewers').innerText = data.total_viewers || 0;
+            const saved = Math.max(0, (data.total_viewers || 0) - (data.total_relays || 0));
+            document.getElementById('statSavedConns').innerText = saved;
+
+            renderStreams();
+        } catch (e) {
+            console.error('Error loading streams:', e);
+            document.getElementById('streamsListContainer').innerHTML = `
+                <div style="padding:2rem; text-align:center; color:var(--danger);">
+                    Failed to load active streams: ${escapeHtml(e.message)}
+                </div>
+            `;
+        }
+    }
+
+    function renderStreams() {
+        const container = document.getElementById('streamsListContainer');
+        if (!state.streams || state.streams.length === 0) {
+            container.innerHTML = `
+                <div style="padding:3rem 1.5rem; text-align:center; background:var(--bg-card-subtle); border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted);">
+                    <div style="font-size:2rem; margin-bottom:0.75rem;">📡</div>
+                    <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">No Live Channels Currently Streaming</div>
+                    <p style="margin:0; font-size:0.9rem;">When any connected IPTV app plays a live channel, it is automatically captured, 188-byte packet aligned, and multiplexed here.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+            <table class="url-list-table">
+                <thead>
+                    <tr>
+                        <th>Channel Stream URI</th>
+                        <th>Viewers</th>
+                        <th>Connected Client IPs</th>
+                        <th>Uptime Duration</th>
+                        <th>Auto-Reconnects</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        state.streams.forEach(s => {
+            const ips = (s.client_ips || []).join(', ') || 'Direct';
+            const viewerBadge = `<span class="url-pill online">👥 ${s.viewers} viewer${s.viewers > 1 ? 's' : ''}</span>`;
+
+            html += `
+                <tr>
+                    <td>
+                        <strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.key)}</strong>
+                    </td>
+                    <td>${viewerBadge}</td>
+                    <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(ips)}</code></td>
+                    <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(s.duration || '0s')}</span></td>
+                    <td>
+                        <span style="font-size:0.85rem; color:${s.reconnections > 0 ? 'var(--warning)' : 'var(--text-muted)'}; font-weight:600;">
+                            ${s.reconnections || 0}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="url-pill online">
+                            <span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Multiplexed
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = html;
+    }
+
+    function toggleStreamAutoRefresh() {
+        const cb = document.getElementById('streamAutoRefreshCb');
+        if (streamRefreshTimer) {
+            clearInterval(streamRefreshTimer);
+            streamRefreshTimer = null;
+        }
+        if (cb && cb.checked) {
+            streamRefreshTimer = setInterval(() => {
+                if (state.currentTab === 'streams') {
+                    loadStreams();
+                }
+            }, 5000);
+        }
+    }
+
     async function reloadAll() {
         await loadProviders();
         await loadCategories();
+        await loadUsers();
+        await loadStreams();
     }
 
     // Initialize on page load
     (async function init() {
         await loadProviders();
         await loadCategories();
+        await loadUsers();
+        await loadStreams();
+        toggleStreamAutoRefresh();
     })();
 </script>
 

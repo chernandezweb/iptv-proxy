@@ -19,6 +19,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -857,6 +858,29 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		return
 	}
 
+	if action == "" {
+		var loginMap map[string]interface{}
+		if errM := json.Unmarshal(payload, &loginMap); errM == nil {
+			if userInfo, ok := loginMap["user_info"].(map[string]interface{}); ok {
+				if authUserVal, exists := ctx.Get("auth_user"); exists {
+					if u, ok := authUserVal.(*config.UserItem); ok {
+						userInfo["username"] = u.Username
+						userInfo["password"] = u.Password
+						if u.MaxConnections > 0 {
+							userInfo["max_connections"] = strconv.Itoa(u.MaxConnections)
+						}
+						if c.userManager != nil {
+							userInfo["active_cons"] = strconv.Itoa(c.userManager.ActiveConnections(u.Username))
+						}
+					}
+				}
+			}
+			if updated, errM := json.Marshal(loginMap); errM == nil {
+				payload = updated
+			}
+		}
+	}
+
 	log.Printf("[iptv-proxy] %v | %s |Action\t%s\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
 
 	if cacheable {
@@ -924,8 +948,67 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 	ctx.Data(http.StatusOK, "application/xml", resp)
 }
 
+func (c *Config) authenticateStreamUser(ctx *gin.Context, streamID string, streamType string) (func(), bool) {
+	userParam := ctx.Param("user")
+	passParam := ctx.Param("password")
+
+	var authenticatedUser *config.UserItem
+	if c.userManager != nil {
+		if u, ok := c.userManager.Authenticate(userParam, passParam); ok {
+			authenticatedUser = u
+		}
+	}
+	if authenticatedUser == nil && (c.User.String() == userParam && c.Password.String() == passParam) {
+		authenticatedUser = &config.UserItem{
+			Username:       userParam,
+			Password:       passParam,
+			MaxConnections: 0,
+			Enabled:        true,
+		}
+	}
+
+	if authenticatedUser == nil {
+		log.Printf("[iptv-proxy] Unauthorized stream request from %s for user %q", ctx.ClientIP(), userParam)
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return nil, false
+	}
+
+	streamCtx, cancel := context.WithCancel(ctx.Request.Context())
+	var slot *config.UserSlot
+	var allowed bool = true
+	if c.userManager != nil {
+		slot, allowed = c.userManager.AcquireSlot(authenticatedUser.Username, ctx.ClientIP(), streamID, streamType, cancel)
+	}
+
+	if !allowed {
+		log.Printf("[iptv-proxy] 403 Forbidden: User %q exceeded max connection limit (%d allowed) from IP %s",
+			authenticatedUser.Username, authenticatedUser.MaxConnections, ctx.ClientIP())
+		cancel()
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error": fmt.Sprintf("Max concurrent stream connections reached (%d)", authenticatedUser.MaxConnections),
+		})
+		return nil, false
+	}
+
+	ctx.Request = ctx.Request.WithContext(streamCtx)
+
+	cleanup := func() {
+		cancel()
+		if c.userManager != nil && slot != nil {
+			c.userManager.ReleaseSlot(authenticatedUser.Username, slot)
+		}
+	}
+	return cleanup, true
+}
+
 func (c *Config) xtreamStreamHandler(ctx *gin.Context) {
 	id := ctx.Param("id")
+	cleanup, ok := c.authenticateStreamUser(ctx, id, "auto")
+	if !ok {
+		return
+	}
+	defer cleanup()
+
 	targetProv, origID := c.ResolveTargetStream("live", id)
 	rpURL, err := url.Parse(fmt.Sprintf("%s/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
@@ -938,6 +1021,12 @@ func (c *Config) xtreamStreamHandler(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamLive(ctx *gin.Context) {
 	id := ctx.Param("id")
+	cleanup, ok := c.authenticateStreamUser(ctx, id, "live")
+	if !ok {
+		return
+	}
+	defer cleanup()
+
 	targetProv, origID := c.ResolveTargetStream("live", id)
 	rpURL, err := url.Parse(fmt.Sprintf("%s/live/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
@@ -964,6 +1053,12 @@ func (c *Config) xtreamStreamTimeshift(ctx *gin.Context) {
 	duration := ctx.Param("duration")
 	start := ctx.Param("start")
 	id := ctx.Param("id")
+	cleanup, ok := c.authenticateStreamUser(ctx, id, "timeshift")
+	if !ok {
+		return
+	}
+	defer cleanup()
+
 	targetProv, origID := c.ResolveTargetStream("live", id)
 	rpURL, err := url.Parse(fmt.Sprintf("%s/timeshift/%s/%s/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, duration, start, origID))
 	if err != nil {
@@ -976,6 +1071,12 @@ func (c *Config) xtreamStreamTimeshift(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamMovie(ctx *gin.Context) {
 	id := ctx.Param("id")
+	cleanup, ok := c.authenticateStreamUser(ctx, id, "movie")
+	if !ok {
+		return
+	}
+	defer cleanup()
+
 	targetProv, origID := c.ResolveTargetStream("movie", id)
 	rpURL, err := url.Parse(fmt.Sprintf("%s/movie/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {
@@ -988,6 +1089,12 @@ func (c *Config) xtreamStreamMovie(ctx *gin.Context) {
 
 func (c *Config) xtreamStreamSeries(ctx *gin.Context) {
 	id := ctx.Param("id")
+	cleanup, ok := c.authenticateStreamUser(ctx, id, "series")
+	if !ok {
+		return
+	}
+	defer cleanup()
+
 	targetProv, origID := c.ResolveTargetStream("series", id)
 	rpURL, err := url.Parse(fmt.Sprintf("%s/series/%s/%s/%s", targetProv.XtreamBaseURL, targetProv.XtreamUser, targetProv.XtreamPassword, origID))
 	if err != nil {

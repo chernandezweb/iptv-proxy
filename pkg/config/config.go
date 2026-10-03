@@ -54,6 +54,7 @@ type ProxyConfig struct {
 	XMLTVCacheTTL        time.Duration
 	Filters              *Filters
 	Provider             *Provider
+	UserManager          *UserManager
 	BackupURLs           []string
 	Referer              string
 	UserAgent            string

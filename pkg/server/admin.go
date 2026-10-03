@@ -2,7 +2,9 @@ package server
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -32,6 +34,10 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/provider", c.adminSaveProvider)
 	admin.POST("/api/provider/test", c.adminTestProvider)
 	admin.POST("/api/provider/rotate", c.adminRotateProvider)
+	admin.GET("/api/users", c.adminGetUsers)
+	admin.POST("/api/users", c.adminSaveUsers)
+	admin.DELETE("/api/users/:id", c.adminDeleteUser)
+	admin.GET("/api/streams", c.adminGetStreams)
 
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
@@ -611,3 +617,175 @@ func (c *Config) adminRotateProvider(ctx *gin.Context) {
 		"message":    fmt.Sprintf("Rotated active provider to %s", c.XtreamBaseURL),
 	})
 }
+
+// AdminUserView provides user info along with live active connection stats.
+type AdminUserView struct {
+	config.UserItem
+	ActiveConnections int               `json:"active_connections"`
+	ActiveSlots       []config.UserSlot `json:"active_slots"`
+}
+
+func (c *Config) adminGetUsers(ctx *gin.Context) {
+	if c.userManager == nil {
+		ctx.JSON(http.StatusOK, gin.H{"users": []AdminUserView{}})
+		return
+	}
+
+	users := c.userManager.GetUsers()
+	allSlots := c.userManager.GetAllActiveSlots()
+	result := make([]AdminUserView, len(users))
+
+	for i, u := range users {
+		slots := allSlots[u.Username]
+		if slots == nil {
+			slots = []config.UserSlot{}
+		}
+		result[i] = AdminUserView{
+			UserItem:          u,
+			ActiveConnections: len(slots),
+			ActiveSlots:       slots,
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"users":        result,
+		"default_user": c.User.String(),
+	})
+}
+
+func (c *Config) adminSaveUsers(ctx *gin.Context) {
+	if c.userManager == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "user manager not initialized"})
+		return
+	}
+
+	bodyBytes, err := ioutil.ReadAll(ctx.Request.Body)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	// Try single user
+	var single config.UserItem
+	if err := json.Unmarshal(bodyBytes, &single); err == nil && single.Username != "" {
+		users := c.userManager.GetUsers()
+		updated := false
+
+		if single.ID != "" {
+			for i, u := range users {
+				if u.ID == single.ID {
+					users[i].Username = single.Username
+					if single.Password != "" {
+						users[i].Password = single.Password
+					}
+					users[i].MaxConnections = single.MaxConnections
+					users[i].Enabled = single.Enabled
+					updated = true
+					break
+				}
+			}
+		}
+
+		if !updated {
+			for _, u := range users {
+				if u.Username == single.Username {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Username '%s' already exists", single.Username)})
+					return
+				}
+			}
+			if single.ID == "" {
+				single.ID = fmt.Sprintf("user_%d", time.Now().UnixNano())
+			}
+			if single.CreatedAt.IsZero() {
+				single.CreatedAt = time.Now()
+			}
+			users = append(users, single)
+		}
+
+		if err := c.userManager.Save(users); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"status": "success", "message": "User saved successfully"})
+		return
+	}
+
+	// Try list of users
+	var list []config.UserItem
+	if err := json.Unmarshal(bodyBytes, &list); err == nil {
+		if err := c.userManager.Save(list); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"status": "success", "message": "Users saved successfully"})
+		return
+	}
+
+	ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON format"})
+}
+
+func (c *Config) adminDeleteUser(ctx *gin.Context) {
+	if c.userManager == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "user manager not initialized"})
+		return
+	}
+	id := ctx.Param("id")
+	if id == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user id required"})
+		return
+	}
+
+	users := c.userManager.GetUsers()
+	filtered := make([]config.UserItem, 0, len(users))
+	found := false
+	for _, u := range users {
+		if u.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, u)
+	}
+
+	if !found {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	if err := c.userManager.Save(filtered); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"status": "success", "message": "User deleted successfully"})
+}
+
+func (c *Config) adminGetStreams(ctx *gin.Context) {
+	var relays []ActiveStreamInfo
+	if c.streamHub != nil {
+		relays = c.streamHub.GetActiveStreamsInfo()
+	}
+	if relays == nil {
+		relays = []ActiveStreamInfo{}
+	}
+
+	var userSlots map[string][]config.UserSlot
+	if c.userManager != nil {
+		userSlots = c.userManager.GetAllActiveSlots()
+	}
+	if userSlots == nil {
+		userSlots = make(map[string][]config.UserSlot)
+	}
+
+	totalViewers := 0
+	for _, r := range relays {
+		totalViewers += r.Viewers
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"relays":        relays,
+		"user_slots":    userSlots,
+		"total_relays":  len(relays),
+		"total_viewers": totalViewers,
+	})
+}
+

@@ -6,12 +6,14 @@ A high-performance IPTV proxy for **Xtream Codes** and **M3U** playlists with bu
 
 ## 🌟 Key Features
 
+* **Live Stream Hub & Multiplexing**: Multiple clients watching the same live channel share a single upstream connection to your IPTV provider, saving provider connection limits and VPS bandwidth. Features 188-byte MPEG-TS packet boundary alignment, a 20-second silence watchdog, and automatic exponential backoff stream reconnection.
+* **Multi-User Accounts & Connection Limits**: Create individual player credentials directly from the Web Admin UI. Enforce maximum concurrent connection limits per user with smart channel-switch rollover (old stream slot instantly freed for same IP) and `403 Forbidden` blocking for unauthorized concurrent IPs.
 * **Xtream Codes & M3U Compatible**: Works with Televizo, TiviMate, IPTnator, IPTV Smarters, VLC, and any player supporting Xtream Codes API or M3U playlists.
 * **NordVPN SOCKS5 Proxy**: Routes all upstream traffic through NordVPN SOCKS5 servers to bypass ISP blocks, throttling, and geo-restrictions without installing VPN software on the host.
 * **Dynamic Category Filtering**: Selectively include or exclude Live TV, Movies (VOD), and Series categories from the Web UI. Filtered categories are blocked from both category lists and bulk searches.
 * **Multi-Provider Failover Pool**: Aggregate multiple IPTV providers or backup server URLs into a single playlist with automatic health testing and failover.
-* **Persistent Storage**: Configuration files (`provider.json` and `filters.json`) are stored in a dedicated host-mounted volume that survives container restarts, updates, and rebuilds.
-* **Modern Web Admin Dashboard**: Manage providers, failover servers, and category filters from an intuitive web interface.
+* **Persistent Storage**: Configuration files (`provider.json`, `filters.json`, and `users.json`) are stored in a dedicated host-mounted volume that survives container restarts, updates, and rebuilds.
+* **Modern Web Admin Dashboard**: Manage providers, failover servers, user accounts, active live streams, and category filters from an intuitive web interface.
 * **Optimized Stream Proxying**: High-performance HTTP client with connection pooling, keep-alive reuse, and metadata caching for instant playlist loading.
 
 ---
@@ -236,7 +238,7 @@ volumes:
 Check that the folder exists on your VPS:
 ```bash
 ls -la ~/iptv-proxy/data/
-# Should contain: filters.json  provider.json
+# Should contain: filters.json  provider.json  users.json
 ```
 
 ### 2. How can I verify NordVPN SOCKS5 is working?

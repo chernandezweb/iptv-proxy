@@ -68,6 +68,7 @@ type Config struct {
 	xmltvCache    *responseCache
 	chunkCache    *chunkCache
 	streamHub     *StreamHub
+	userManager   *config.UserManager
 	httpClient    *http.Client
 	baseStreamURL *url.URL
 
@@ -130,7 +131,8 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	}
 	filtersPath := filepath.Join(dataDir, "filters.json")
 	providerPath := filepath.Join(dataDir, "provider.json")
-	log.Printf("[iptv-proxy] Storage directory configured: %s (filters: %s, provider: %s)", dataDir, filtersPath, providerPath)
+	usersPath := filepath.Join(dataDir, "users.json")
+	log.Printf("[iptv-proxy] Storage directory configured: %s (filters: %s, provider: %s, users: %s)", dataDir, filtersPath, providerPath, usersPath)
 	cfg.ProxyConfig.Filters = config.NewFilters(filtersPath)
 	cfg.ProxyConfig.Provider = config.NewProvider(providerPath, config.ProviderData{
 		XtreamBaseURL:  cfgData.XtreamBaseURL,
@@ -138,6 +140,8 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 		XtreamPassword: string(cfgData.XtreamPassword),
 		Referer:        cfgData.Referer,
 	})
+	cfg.userManager = config.NewUserManager(usersPath, cfgData.User.String(), cfgData.Password.String())
+	cfg.ProxyConfig.UserManager = cfg.userManager
 
 	provData := cfg.ProxyConfig.Provider.GetData()
 	cfg.ProxyConfig.XtreamBaseURL = provData.XtreamBaseURL

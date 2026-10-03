@@ -78,8 +78,9 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 	requestRangeHeader := ctx.Request.Header.Get("Range")
 	forwardRange := requestRangeHeader != ""
 
-	// Check if this stream can be multiplexed through the shared stream hub
-	if c.streamHub != nil && !forwardRange && strings.Contains(oriURL.Path, ".ts") {
+	// Check if this stream can be multiplexed through the shared stream hub (live broadcasts)
+	isLiveBroadcast := !forwardRange && (strings.Contains(oriURL.Path, ".ts") || strings.Contains(ctx.Request.URL.Path, "/live/") || (!strings.Contains(oriURL.Path, "/movie/") && !strings.Contains(oriURL.Path, "/series/")))
+	if c.streamHub != nil && isLiveBroadcast {
 		if c.streamHub.TryPlaySharedStream(ctx, c, client, oriURL) {
 			return
 		}
@@ -358,7 +359,25 @@ func (c *Config) authenticate(ctx *gin.Context) {
 		ctx.AbortWithError(http.StatusBadRequest, err) // nolint: errcheck
 		return
 	}
-	if c.ProxyConfig.User.String() != authReq.Username || c.ProxyConfig.Password.String() != authReq.Password {
+
+	valid := false
+	if c.userManager != nil {
+		if u, ok := c.userManager.Authenticate(authReq.Username, authReq.Password); ok {
+			valid = true
+			ctx.Set("auth_user", u)
+		}
+	}
+	if !valid && c.ProxyConfig.User.String() == authReq.Username && c.ProxyConfig.Password.String() == authReq.Password {
+		valid = true
+		ctx.Set("auth_user", &config.UserItem{
+			Username:       authReq.Username,
+			Password:       authReq.Password,
+			MaxConnections: 0,
+			Enabled:        true,
+		})
+	}
+
+	if !valid {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
 	}
 }
@@ -380,8 +399,29 @@ func (c *Config) appAuthenticate(ctx *gin.Context) {
 		return
 	}
 	log.Printf("[iptv-proxy] %v | %s |App Auth\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP())
-	if c.ProxyConfig.User.String() != q["username"][0] || c.ProxyConfig.Password.String() != q["password"][0] {
+
+	reqUser := q["username"][0]
+	reqPass := q["password"][0]
+	valid := false
+	if c.userManager != nil {
+		if u, ok := c.userManager.Authenticate(reqUser, reqPass); ok {
+			valid = true
+			ctx.Set("auth_user", u)
+		}
+	}
+	if !valid && c.ProxyConfig.User.String() == reqUser && c.ProxyConfig.Password.String() == reqPass {
+		valid = true
+		ctx.Set("auth_user", &config.UserItem{
+			Username:       reqUser,
+			Password:       reqPass,
+			MaxConnections: 0,
+			Enabled:        true,
+		})
+	}
+
+	if !valid {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 
 	ctx.Request.Body = ioutil.NopCloser(bytes.NewReader(contents))

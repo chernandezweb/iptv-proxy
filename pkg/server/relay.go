@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -13,7 +14,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	tsPacket   = 188
+	tsSyncByte = 0x47
+
+	readBytes  = 64 << 10
+	sniffBytes = tsPacket + 1
+
+	stallTimeout = 20 * time.Second
+	healthyAfter = 10 * time.Second
+)
+
 type relaySubscriber struct {
+	ip        string
 	ch        chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
@@ -25,23 +38,39 @@ func (s *relaySubscriber) close() {
 	})
 }
 
+// ActiveStreamInfo contains metrics about currently multiplexed live channels.
+type ActiveStreamInfo struct {
+	Key           string    `json:"key"`
+	URL           string    `json:"url"`
+	Viewers       int       `json:"viewers"`
+	StartedAt     time.Time `json:"started_at"`
+	Duration      string    `json:"duration"`
+	Reconnections int       `json:"reconnections"`
+	ClientIPs     []string  `json:"client_ips"`
+}
+
 type streamRelay struct {
-	hub         *StreamHub
-	streamKey   string
-	oriURL      *url.URL
-	contentType string
-	header      http.Header
-	ready       chan struct{}
-	upstreamErr error
+	hub           *StreamHub
+	streamKey     string
+	oriURL        *url.URL
+	contentType   string
+	header        http.Header
+	ready         chan struct{}
+	upstreamErr   error
+	ts            bool
+	startedAt     time.Time
+	reconnections int
 
 	mu          sync.Mutex
 	subscribers map[*relaySubscriber]bool
 	cancel      context.CancelFunc
+	connCancel  context.CancelFunc
 	active      bool
 }
 
 // StreamHub manages multiplexed live stream relays so multiple devices watching
-// the same channel share a single upstream connection to the IPTV provider.
+// the same channel share a single upstream connection to the IPTV provider,
+// with automatic packet alignment and drop/stall reconnection.
 type StreamHub struct {
 	mu     sync.Mutex
 	relays map[string]*streamRelay
@@ -51,6 +80,38 @@ func newStreamHub() *StreamHub {
 	return &StreamHub{
 		relays: make(map[string]*streamRelay),
 	}
+}
+
+// GetActiveStreamsInfo returns a summary of all channels currently being watched.
+func (h *StreamHub) GetActiveStreamsInfo() []ActiveStreamInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var list []ActiveStreamInfo
+	for key, r := range h.relays {
+		r.mu.Lock()
+		ips := make([]string, 0, len(r.subscribers))
+		for sub := range r.subscribers {
+			ips = append(ips, sub.ip)
+		}
+		durationStr := time.Since(r.startedAt).Truncate(time.Second).String()
+		info := ActiveStreamInfo{
+			Key:           key,
+			URL:           r.oriURL.String(),
+			Viewers:       len(r.subscribers),
+			StartedAt:     r.startedAt,
+			Duration:      durationStr,
+			Reconnections: r.reconnections,
+			ClientIPs:     ips,
+		}
+		r.mu.Unlock()
+		list = append(list, info)
+	}
+	return list
+}
+
+func isTS(begin []byte) bool {
+	return len(begin) > tsPacket && begin[0] == tsSyncByte && begin[tsPacket] == tsSyncByte
 }
 
 // TryPlaySharedStream checks if the stream can be relayed or attached to an existing relay.
@@ -69,7 +130,6 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 	h.mu.Lock()
 	relay, exists := h.relays[streamKey]
 	if !exists {
-		// Start a new relay
 		reqCtx, cancel := context.WithCancel(context.Background())
 		relay = &streamRelay{
 			hub:         h,
@@ -78,6 +138,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 			subscribers: make(map[*relaySubscriber]bool),
 			cancel:      cancel,
 			active:      true,
+			startedAt:   time.Now(),
 			ready:       make(chan struct{}),
 		}
 		h.relays[streamKey] = relay
@@ -89,12 +150,12 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 		h.mu.Unlock()
 	}
 
-	// Wait for upstream connection to be established (up to 5 seconds)
+	// Wait for upstream connection to be established (up to 8 seconds)
 	select {
 	case <-relay.ready:
 	case <-ctx.Request.Context().Done():
 		return true
-	case <-time.After(5 * time.Second):
+	case <-time.After(8 * time.Second):
 		return false
 	}
 
@@ -104,7 +165,8 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 
 	// Register this client as a subscriber
 	sub := &relaySubscriber{
-		ch:   make(chan []byte, 128),
+		ip:   ctx.ClientIP(),
+		ch:   make(chan []byte, 256),
 		done: make(chan struct{}),
 	}
 
@@ -115,7 +177,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 	header := relay.header.Clone()
 	relay.mu.Unlock()
 
-	log.Printf("[iptv-proxy] Shared stream relay: Client %s tuned into %s (Active viewers sharing this upstream connection: %d)", ctx.ClientIP(), streamKey, viewersCount)
+	log.Printf("[iptv-proxy] Shared stream hub: Client %s tuned into %s (Active viewers sharing this 1 upstream connection: %d)", ctx.ClientIP(), streamKey, viewersCount)
 
 	defer func() {
 		relay.mu.Lock()
@@ -127,7 +189,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 		log.Printf("[iptv-proxy] Client %s disconnected from %s (Remaining viewers: %d)", ctx.ClientIP(), streamKey, remaining)
 
 		if remaining == 0 {
-			// Grace period before tearing down upstream in case viewer is just reconnecting
+			// Grace period before tearing down upstream in case viewer is just reconnecting/switching
 			time.AfterFunc(3*time.Second, func() {
 				relay.mu.Lock()
 				if len(relay.subscribers) == 0 && relay.active {
@@ -136,7 +198,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 					h.mu.Lock()
 					delete(h.relays, streamKey)
 					h.mu.Unlock()
-					log.Printf("[iptv-proxy] Shared stream relay for %s stopped (no active viewers)", streamKey)
+					log.Printf("[iptv-proxy] Shared stream hub: Closed upstream for %s (no remaining viewers)", streamKey)
 				}
 				relay.mu.Unlock()
 			})
@@ -172,20 +234,15 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 }
 
 func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *http.Client) {
-	ginCtx := &gin.Context{
-		Request: (&http.Request{
-			Method: "GET",
-			URL:    r.oriURL,
-			Header: make(http.Header),
-		}).WithContext(ctx),
-	}
+	connCtx, connCancel := context.WithCancel(ctx)
+	r.connCancel = connCancel
 
-	resp, err := cfg.forwardStreamRequest(ginCtx, client, r.oriURL, false)
+	resp, err := r.openConn(connCtx, cfg, client)
 	if err != nil || (resp != nil && resp.StatusCode >= 400) {
 		if err == nil {
 			err = fmt.Errorf("upstream returned status %d", resp.StatusCode)
 		}
-		log.Printf("[iptv-proxy] Error starting shared relay upstream for %s: %v", r.streamKey, err)
+		log.Printf("[iptv-proxy] Error opening shared stream for %s: %v", r.streamKey, err)
 		r.upstreamErr = err
 		close(r.ready)
 		r.hub.mu.Lock()
@@ -194,15 +251,81 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 		r.cancel()
 		return
 	}
-	defer resp.Body.Close()
+
+	reader := bufio.NewReaderSize(resp.Body, readBytes)
+	begin, _ := reader.Peek(sniffBytes)
 
 	r.mu.Lock()
 	r.contentType = resp.Header.Get("Content-Type")
 	r.header = resp.Header.Clone()
+	r.ts = isTS(begin)
 	r.mu.Unlock()
 	close(r.ready)
 
-	buf := make([]byte, 128*1024)
+	r.runStreamLoop(ctx, cfg, client, resp, reader)
+}
+
+func (r *streamRelay) openConn(ctx context.Context, cfg *Config, client *http.Client) (*http.Response, error) {
+	ginCtx := &gin.Context{
+		Request: (&http.Request{
+			Method: "GET",
+			URL:    r.oriURL,
+			Header: make(http.Header),
+		}).WithContext(ctx),
+	}
+	return cfg.forwardStreamRequest(ginCtx, client, r.oriURL, false)
+}
+
+func (r *streamRelay) broadcast(chunk []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for sub := range r.subscribers {
+		select {
+		case sub.ch <- chunk:
+		default:
+			// Client buffer backed up (slow client network) -> drop chunk to avoid lagging other viewers
+		}
+	}
+	return len(r.subscribers) > 0
+}
+
+func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *http.Client, initialResp *http.Response, initialReader *bufio.Reader) {
+	currentResp := initialResp
+	currentReader := initialReader
+
+	defer func() {
+		if currentResp != nil && currentResp.Body != nil {
+			_ = currentResp.Body.Close()
+		}
+		r.hub.mu.Lock()
+		delete(r.hub.relays, r.streamKey)
+		r.hub.mu.Unlock()
+
+		r.mu.Lock()
+		r.active = false
+		for sub := range r.subscribers {
+			sub.close()
+		}
+		r.mu.Unlock()
+	}()
+
+	buf := make([]byte, readBytes)
+	var partial []byte
+	openedAt := time.Now()
+
+	// Watchdog timer: drops connection if upstream is silent for stallTimeout
+	watchdog := time.AfterFunc(stallTimeout, func() {
+		if r.connCancel != nil {
+			log.Printf("[iptv-proxy] Upstream for %s stalled (>%v silent), dropping for reconnect", r.streamKey, stallTimeout)
+			r.connCancel()
+		}
+	})
+	defer watchdog.Stop()
+
+	retries := []time.Duration{0, 500 * time.Millisecond, time.Second, 2 * time.Second, 4 * time.Second}
+	attempt := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -210,38 +333,85 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 		default:
 		}
 
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := currentReader.Read(buf)
 		if n > 0 {
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
+			watchdog.Reset(stallTimeout)
+			chunk := make([]byte, 0, len(partial)+n)
+			chunk = append(chunk, partial..., buf[:n]...)
+			partial = nil
 
+			if r.ts {
+				whole := len(chunk) - (len(chunk) % tsPacket)
+				partial = append(partial, chunk[whole:]...)
+				chunk = chunk[:whole]
+			}
+
+			if len(chunk) > 0 && !r.broadcast(chunk) {
+				// No subscribers left
+				return
+			}
+		}
+
+		if readErr == nil {
+			continue
+		}
+
+		// Read error / EOF / Drop -> Reconnect while viewers are still watching
+		_ = currentResp.Body.Close()
+		partial = nil
+		watchdog.Stop()
+
+		if time.Since(openedAt) >= healthyAfter {
+			attempt = 0
+		}
+
+		reconnected := false
+		for attempt < len(retries) {
+			waitDur := retries[attempt]
+			attempt++
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(waitDur):
+			}
+
+			// Check if any viewers are still waiting
 			r.mu.Lock()
-			for sub := range r.subscribers {
-				select {
-				case sub.ch <- chunk:
-				default:
-					// Drop chunk if subscriber buffer is backed up to avoid lagging other viewers
-				}
-			}
+			hasViewers := len(r.subscribers) > 0
 			r.mu.Unlock()
-		}
-
-		if readErr != nil {
-			if readErr != io.EOF && ctx.Err() == nil {
-				log.Printf("[iptv-proxy] Upstream relay read ended for %s: %v", r.streamKey, readErr)
+			if !hasViewers {
+				return
 			}
-			break
+
+			if r.connCancel != nil {
+				r.connCancel()
+			}
+			newConnCtx, newConnCancel := context.WithCancel(ctx)
+			r.connCancel = newConnCancel
+
+			log.Printf("[iptv-proxy] Upstream dropped for %s, attempt %d/%d to reconnect...", r.streamKey, attempt, len(retries))
+			newResp, newErr := r.openConn(newConnCtx, cfg, client)
+			if newErr == nil && newResp != nil && newResp.StatusCode == http.StatusOK {
+				currentResp = newResp
+				currentReader = bufio.NewReaderSize(newResp.Body, readBytes)
+				openedAt = time.Now()
+				watchdog.Reset(stallTimeout)
+				r.mu.Lock()
+				r.reconnections++
+				r.mu.Unlock()
+				log.Printf("[iptv-proxy] Shared stream for %s reconnected successfully! Viewers unaffected.", r.streamKey)
+				reconnected = true
+				break
+			}
+			if newResp != nil && newResp.Body != nil {
+				_ = newResp.Body.Close()
+			}
+		}
+
+		if !reconnected {
+			log.Printf("[iptv-proxy] Upstream reconnect failed for %s after %d attempts", r.streamKey, attempt)
+			return
 		}
 	}
-
-	r.hub.mu.Lock()
-	delete(r.hub.relays, r.streamKey)
-	r.hub.mu.Unlock()
-
-	r.mu.Lock()
-	r.active = false
-	for sub := range r.subscribers {
-		sub.close()
-	}
-	r.mu.Unlock()
 }

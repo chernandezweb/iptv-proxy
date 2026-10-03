@@ -69,58 +69,18 @@ http://<YOUR_VPS_IP>:8080/admin/
 * **Default Username**: `admin`
 * **Default Password**: `admin`
 
-That's it! From the Web Admin UI, you can:
-1. **Add Your IPTV Provider(s)**: Go to the **Providers** tab and click **➕ Add Your First Provider** to enter your Xtream URL, username, password, and optional backup failover URLs.
-2. **Set Up User Accounts**: Go to the **Users** tab to change the default admin password and create separate accounts for family members or devices with custom concurrent stream limits.
-3. **Filter Categories**: Go to the **Live TV**, **Movies**, or **Series** tabs to uncheck unwanted or adult categories.
+That's it! Everything can be configured directly from the Web Admin:
+1. **Providers Tab**: Click **➕ Add Your First Provider** to enter your Xtream URL, username, password, and optional backup failover URLs.
+2. **Users Tab**: Change the default admin password and create player accounts for family members or devices with concurrent connection limits.
+3. **VPN / Proxy Tab**: Turn on NordVPN SOCKS5 with one click, choose a server preset (Sweden, Netherlands, US, Germany, etc.), test your outbound IP with `🧪 Test Proxy`, and save.
+4. **Live Hub Tab**: Monitor multiplexed streams in real time (multiple devices watching the same live channel share 1 upstream provider connection).
+5. **Filtering Tabs**: Check or uncheck Live TV, Movie (VOD), and Series categories to hide adult content or unwanted channels.
 
 All configurations are automatically saved to `./data/` on your host and persist permanently across container restarts, updates, and rebuilds.
 
 ---
 
-## ⚙️ Advanced Configuration (Optional)
-
-If you prefer headless environment variables or want to route upstream traffic through **NordVPN SOCKS5**, you can customize `docker-compose.yml`:
-
-```yaml
-version: "3.8"
-
-services:
-  iptv-proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: iptv-proxy
-    restart: unless-stopped
-    ports:
-      # Format: HOST_PORT:CONTAINER_PORT
-      - "8080:8080"
-    volumes:
-      # Persistent storage for provider.json, users.json, and filters.json
-      - ./data:/data
-    environment:
-      PORT: 8080
-      DATA_DIR: "/data"
-      GIN_MODE: release
-
-      # Default admin credentials
-      USER: "admin"
-      PASSWORD: "admin"
-
-      # Optional: Hardcode upstream provider (or configure via Web UI)
-      # XTREAM_BASE_URL: "http://provider-domain.com:8080"
-      # XTREAM_USER: "upstream_username"
-      # XTREAM_PASSWORD: "upstream_password"
-
-      # Optional: Route upstream through NordVPN SOCKS5 (see below)
-      # ALL_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
-      # HTTP_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
-      # HTTPS_PROXY: "socks5://NORD_USER:NORD_PASS@se.socks.nordhold.net:1080"
-```
-
----
-
-## 🛡️ NordVPN SOCKS5 Setup (Optional)
+## 🛡️ NordVPN SOCKS5 Setup (100% Web UI or Docker Compose)
 
 Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoids ISP blocks or throttling without installing VPN software on the host.
 
@@ -130,18 +90,14 @@ Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoid
 2. Navigate to **Services** → **NordVPN** → **Manual setup** (or **Service credentials**).
 3. Copy your generated **Username** and **Password**.
 
-### 2. Available NordVPN SOCKS5 Servers
-Choose a server location closest to your IPTV provider or VPS:
-* `se.socks.nordhold.net:1080` (Sweden)
-* `nl.socks.nordhold.net:1080` (Netherlands)
-* `us.socks.nordhold.net:1080` (United States)
-* `de.socks.nordhold.net:1080` (Germany)
-* `ie.socks.nordhold.net:1080` (Ireland)
+### 2. Configure via the Web Admin (Recommended)
+1. Open **`http://<YOUR_VPS_IP>:8080/admin/`** and go to the **🛡️ VPN / Proxy** tab.
+2. Check **Enable Outbound VPN / SOCKS5 Proxy**.
+3. Pick a server location from the **NordVPN Quick Presets** dropdown (e.g. *Sweden* or *Netherlands*).
+4. Enter your NordVPN Service Username & Password.
+5. Click **🧪 Test Proxy & Check IP** to verify connectivity, then click **💾 Save & Apply Proxy**.
 
-Format for `docker-compose.yml`:
-```text
-socks5://<NORD_SERVICE_USERNAME>:<NORD_SERVICE_PASSWORD>@<SERVER_HOSTNAME>:1080
-```
+*(Alternatively, you can also set `ALL_PROXY: "socks5://USER:PASS@se.socks.nordhold.net:1080"` in `docker-compose.yml` if you prefer environment variables).*
 
 ---
 

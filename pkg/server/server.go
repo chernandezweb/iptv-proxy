@@ -117,7 +117,6 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.chunkCache = newChunkCache(15 * time.Second)
 	cfg.streamHub = newStreamHub()
 	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
-	cfg.httpClient = newUpstreamHTTPClient(cfg)
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
@@ -143,6 +142,17 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.userManager = config.NewUserManager(usersPath, cfgData.User.String(), cfgData.Password.String())
 	cfg.ProxyConfig.UserManager = cfg.userManager
 
+	// Apply SOCKS / VPN proxy if configured in provider.json
+	socks := cfg.ProxyConfig.Provider.GetSocksProxy()
+	if socks.Enabled && socks.ProxyURL() != "" {
+		pURL := socks.ProxyURL()
+		os.Setenv("ALL_PROXY", pURL)
+		os.Setenv("HTTP_PROXY", pURL)
+		os.Setenv("HTTPS_PROXY", pURL)
+		log.Printf("[iptv-proxy] Upstream VPN/SOCKS5 proxy active: %s://%s:%d", socks.Type, socks.Host, socks.Port)
+	}
+	cfg.httpClient = newUpstreamHTTPClient(cfg)
+
 	provData := cfg.ProxyConfig.Provider.GetData()
 	cfg.ProxyConfig.XtreamBaseURL = provData.XtreamBaseURL
 	cfg.ProxyConfig.BackupURLs = provData.BackupURLs
@@ -157,6 +167,26 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ApplyProxySettings updates the active outbound SOCKS5/VPN proxy transport in real time.
+func (c *Config) ApplyProxySettings(socks config.UpstreamProxySettings) {
+	if socks.Enabled && socks.ProxyURL() != "" {
+		pURL := socks.ProxyURL()
+		os.Setenv("ALL_PROXY", pURL)
+		os.Setenv("HTTP_PROXY", pURL)
+		os.Setenv("HTTPS_PROXY", pURL)
+		log.Printf("[iptv-proxy] Upstream VPN/SOCKS5 proxy active: %s://%s:%d", socks.Type, socks.Host, socks.Port)
+	} else {
+		os.Unsetenv("ALL_PROXY")
+		os.Unsetenv("HTTP_PROXY")
+		os.Unsetenv("HTTPS_PROXY")
+		log.Println("[iptv-proxy] Upstream VPN/SOCKS5 proxy disabled (direct connection)")
+	}
+	c.httpClient = newUpstreamHTTPClient(c)
+	provClientCacheLock.Lock()
+	provClientCache = make(map[string]*xtreamapi.Client)
+	provClientCacheLock.Unlock()
 }
 
 // Serve the iptv-proxy api

@@ -271,6 +271,11 @@
             transition: all 0.2s;
         }
 
+        .badge.badge-green {
+            background: rgba(34, 197, 94, 0.25);
+            color: #4ade80;
+        }
+
         .tab:hover .badge {
             background: rgba(255, 255, 255, 0.18);
             color: var(--text);
@@ -279,6 +284,11 @@
         .tab.active .badge {
             background: rgba(0, 0, 0, 0.32);
             color: #ffffff;
+        }
+
+        .tab.active .badge.badge-green {
+            background: rgba(34, 197, 94, 0.35);
+            color: #86efac;
         }
 
         .tab-content {
@@ -1073,6 +1083,11 @@
                 <span class="tab-title">Live Hub</span>
                 <span class="badge" id="streamsBadge">0</span>
             </button>
+            <button class="tab" id="tab-vpn" onclick="switchTab('vpn')">
+                <span class="tab-icon">🛡️</span>
+                <span class="tab-title">VPN / Proxy</span>
+                <span class="badge" id="vpnBadge">OFF</span>
+            </button>
 
             <span class="nav-divider"></span>
 
@@ -1409,6 +1424,121 @@
         <div id="streamsListContainer">
             <div class="loading-state">
                 <span class="spinner"></span> Loading stream relay info...
+        </div>
+    </div>
+
+    <!-- VPN / SOCKS5 PROXY TAB -->
+    <div id="vpnTab" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">Upstream VPN / SOCKS5 Proxy</h2>
+                <p class="subtitle">Route all upstream IPTV traffic through NordVPN or a custom SOCKS5/HTTP proxy to hide your VPS IP, bypass ISP throttling, and avoid geo-blocks.</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary" id="testVpnBtn" onclick="testVpnProxy()">
+                    🧪 Test Proxy &amp; Check IP
+                </button>
+                <button type="button" class="btn" id="saveVpnBtn" onclick="saveVpnProxy()">
+                    💾 Save &amp; Apply Proxy
+                </button>
+            </div>
+        </div>
+
+        <!-- Live Status Card -->
+        <div class="pool-card" style="margin-top:0; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                    <div style="font-size:2rem;" id="vpnStatusIcon">🛡️</div>
+                    <div>
+                        <div style="font-weight:700; font-size:1.05rem;" id="vpnStatusTitle">SOCKS5 Proxy Configuration</div>
+                        <div style="font-size:0.85rem; color:var(--text-muted);" id="vpnStatusSub">Loading proxy status...</div>
+                    </div>
+                </div>
+                <div id="vpnStatusBadge" class="status-badge" style="border-color:var(--border); color:var(--text-muted);">
+                    <span class="status-dot"></span> Checking
+                </div>
+            </div>
+            <div id="vpnTestResultContainer" style="display:none; margin-top:1rem; padding:0.85rem 1rem; border-radius:8px; font-size:0.85rem;"></div>
+        </div>
+
+        <!-- Configuration Form Card -->
+        <div class="pool-card" style="margin-top:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
+                <div>
+                    <label class="form-label" style="margin:0; font-size:1rem; font-weight:700; color:var(--text); display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" id="vpnEnabledCb" style="width:1.2rem; height:1.2rem; accent-color:var(--primary); cursor:pointer;">
+                        Enable Outbound VPN / SOCKS5 Proxy
+                    </label>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
+                        When enabled, all HTTP queries and live TS stream requests to IPTV providers are routed through this proxy.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Server Quick Presets -->
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label class="form-label">NordVPN Quick Presets</label>
+                <select class="form-input" id="nordPresetSelect" onchange="applyNordPreset()">
+                    <option value="">-- Choose a NordVPN Server Preset (or enter custom) --</option>
+                    <option value="se.socks.nordhold.net:1080">Sweden (se.socks.nordhold.net:1080) [Recommended]</option>
+                    <option value="nl.socks.nordhold.net:1080">Netherlands (nl.socks.nordhold.net:1080)</option>
+                    <option value="us.socks.nordhold.net:1080">United States (us.socks.nordhold.net:1080)</option>
+                    <option value="de.socks.nordhold.net:1080">Germany (de.socks.nordhold.net:1080)</option>
+                    <option value="ie.socks.nordhold.net:1080">Ireland (ie.socks.nordhold.net:1080)</option>
+                </select>
+            </div>
+
+            <div class="form-grid" style="margin-bottom:1.25rem;">
+                <div class="form-group">
+                    <label class="form-label">Proxy Protocol</label>
+                    <select class="form-input" id="vpnTypeInput">
+                        <option value="socks5">SOCKS5 (NordVPN standard)</option>
+                        <option value="http">HTTP Proxy</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Proxy Server Host <span style="color:var(--danger)">*</span></label>
+                    <input type="text" class="form-input" id="vpnHostInput" placeholder="e.g. se.socks.nordhold.net">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Proxy Port <span style="color:var(--danger)">*</span></label>
+                    <input type="number" class="form-input" id="vpnPortInput" placeholder="1080" value="1080">
+                </div>
+            </div>
+
+            <div class="form-grid" style="margin-bottom:1.25rem;">
+                <div class="form-group">
+                    <label class="form-label">NordVPN / Proxy Service Username</label>
+                    <input type="text" class="form-input" id="vpnUserInput" placeholder="NordVPN Service Username">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">NordVPN / Proxy Service Password</label>
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="password" class="form-input" id="vpnPassInput" placeholder="NordVPN Service Password">
+                        <button type="button" class="btn btn-secondary" onclick="toggleVpnPassVisibility()" title="Show/Hide Password" style="padding:0 0.85rem;">👁️</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Custom Proxy URL (Optional override)</label>
+                <input type="text" class="form-input" id="vpnCustomUrlInput" placeholder="socks5://username:password@server.host:1080">
+                <span class="form-hint">Leave blank to use host, port, and credentials above.</span>
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-top: 1.5rem;">
+            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
+                💡 How to get your NordVPN SOCKS5 Service Credentials
+            </h4>
+            <div style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.5;">
+                NordVPN SOCKS5 requires <strong>Service Credentials</strong> (not your login email). To find them:
+                <ol style="margin: 0.5rem 0 0 1.25rem; padding: 0;">
+                    <li>Log into your <a href="https://my.nordaccount.com/" target="_blank" style="color:var(--primary); text-decoration:underline;">Nord Account Dashboard</a>.</li>
+                    <li>Go to <strong>Services</strong> → <strong>NordVPN</strong> → <strong>Manual Setup</strong> (or <strong>Service Credentials</strong>).</li>
+                    <li>Copy your generated Username and Password, paste them above, and click <strong>💾 Save &amp; Apply Proxy</strong>.</li>
+                </ol>
             </div>
         </div>
     </div>
@@ -1447,7 +1577,7 @@
         if (targetContent) targetContent.classList.add('active');
 
         const saveFiltersBtn = document.getElementById('saveFiltersBtn');
-        if (type === 'provider' || type === 'users' || type === 'streams') {
+        if (type === 'provider' || type === 'users' || type === 'streams' || type === 'vpn') {
             saveFiltersBtn.style.display = 'none';
         } else {
             saveFiltersBtn.style.display = 'inline-flex';
@@ -1457,6 +1587,8 @@
             loadUsers();
         } else if (type === 'streams') {
             loadStreams();
+        } else if (type === 'vpn') {
+            loadVpnProxy();
         }
     }
 
@@ -2436,11 +2568,153 @@
         }
     }
 
+    async function loadVpnProxy() {
+        try {
+            const res = await fetch('/admin/api/vpn-proxy');
+            if (!res.ok) throw new Error('Failed to load proxy settings');
+            const data = await res.json();
+            const s = data.settings || {};
+
+            document.getElementById('vpnEnabledCb').checked = s.enabled === true;
+            document.getElementById('vpnTypeInput').value = s.type || 'socks5';
+            document.getElementById('vpnHostInput').value = s.host || '';
+            document.getElementById('vpnPortInput').value = s.port || 1080;
+            document.getElementById('vpnUserInput').value = s.username || '';
+            document.getElementById('vpnPassInput').value = s.password || '';
+            document.getElementById('vpnCustomUrlInput').value = s.custom_url || '';
+
+            const badge = document.getElementById('vpnBadge');
+            const statusBadge = document.getElementById('vpnStatusBadge');
+            const statusSub = document.getElementById('vpnStatusSub');
+
+            if (data.active) {
+                badge.innerText = 'ON';
+                badge.className = 'badge badge-green';
+                statusBadge.className = 'status-badge online';
+                statusBadge.innerHTML = '<span class="status-dot"></span> Active';
+                statusSub.innerText = `Routing through ${s.host || 'custom proxy'}:${s.port || 1080}`;
+            } else {
+                badge.innerText = 'OFF';
+                badge.className = 'badge';
+                statusBadge.className = 'status-badge';
+                statusBadge.style.color = 'var(--text-muted)';
+                statusBadge.style.borderColor = 'var(--border)';
+                statusBadge.innerHTML = '<span class="status-dot" style="background:var(--text-muted)"></span> Disabled (Direct)';
+                statusSub.innerText = 'Traffic connects directly without proxy';
+            }
+        } catch (e) {
+            console.error('Error loading VPN proxy:', e);
+        }
+    }
+
+    function applyNordPreset() {
+        const sel = document.getElementById('nordPresetSelect').value;
+        if (!sel) return;
+        const [host, port] = sel.split(':');
+        document.getElementById('vpnHostInput').value = host;
+        document.getElementById('vpnPortInput').value = port || 1080;
+        document.getElementById('vpnTypeInput').value = 'socks5';
+        document.getElementById('vpnEnabledCb').checked = true;
+    }
+
+    function toggleVpnPassVisibility() {
+        const inp = document.getElementById('vpnPassInput');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+    }
+
+    async function saveVpnProxy() {
+        const btn = document.getElementById('saveVpnBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:12px; height:12px;"></span> Saving...';
+
+        const payload = {
+            enabled: document.getElementById('vpnEnabledCb').checked,
+            type: document.getElementById('vpnTypeInput').value,
+            host: document.getElementById('vpnHostInput').value.trim(),
+            port: parseInt(document.getElementById('vpnPortInput').value, 10) || 1080,
+            username: document.getElementById('vpnUserInput').value.trim(),
+            password: document.getElementById('vpnPassInput').value.trim(),
+            custom_url: document.getElementById('vpnCustomUrlInput').value.trim()
+        };
+
+        try {
+            const res = await fetch('/admin/api/vpn-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to save VPN proxy settings');
+            }
+            showToast('✅ VPN/SOCKS5 settings saved and applied!', 'success');
+            await loadVpnProxy();
+        } catch (e) {
+            alert('Error saving VPN proxy: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '💾 Save &amp; Apply Proxy';
+        }
+    }
+
+    async function testVpnProxy() {
+        const btn = document.getElementById('testVpnBtn');
+        const resBox = document.getElementById('vpnTestResultContainer');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:12px; height:12px;"></span> Testing...';
+        resBox.style.display = 'block';
+        resBox.style.background = 'rgba(99, 102, 241, 0.1)';
+        resBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+        resBox.style.color = '#c7d2fe';
+        resBox.innerHTML = '⏳ Connecting through proxy to check outbound IP and latency...';
+
+        const payload = {
+            enabled: true,
+            type: document.getElementById('vpnTypeInput').value,
+            host: document.getElementById('vpnHostInput').value.trim(),
+            port: parseInt(document.getElementById('vpnPortInput').value, 10) || 1080,
+            username: document.getElementById('vpnUserInput').value.trim(),
+            password: document.getElementById('vpnPassInput').value.trim(),
+            custom_url: document.getElementById('vpnCustomUrlInput').value.trim()
+        };
+
+        try {
+            const res = await fetch('/admin/api/vpn-proxy/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.online) {
+                resBox.style.background = 'rgba(34, 197, 94, 0.1)';
+                resBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+                resBox.style.color = '#86efac';
+                resBox.innerHTML = `<strong>✅ Success!</strong> Proxy connected cleanly.<br>Outbound Public IP: <code style="font-size:0.95rem; font-weight:700;">${escapeHtml(data.ip)}</code> (Latency: ${data.latency}ms)`;
+                showToast(`✅ Proxy Online! IP: ${data.ip}`, 'success');
+            } else {
+                resBox.style.background = 'rgba(239, 68, 68, 0.1)';
+                resBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                resBox.style.color = '#fca5a5';
+                resBox.innerHTML = `<strong>❌ Connection Failed:</strong> ${escapeHtml(data.error || 'Unable to connect to proxy')}`;
+                showToast('❌ Proxy test failed', 'error');
+            }
+        } catch (e) {
+            resBox.style.background = 'rgba(239, 68, 68, 0.1)';
+            resBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resBox.style.color = '#fca5a5';
+            resBox.innerHTML = `<strong>❌ Error:</strong> ${escapeHtml(e.message)}`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '🧪 Test Proxy &amp; Check IP';
+        }
+    }
+
     async function reloadAll() {
         await loadProviders();
         await loadCategories();
         await loadUsers();
         await loadStreams();
+        await loadVpnProxy();
     }
 
     // Initialize on page load
@@ -2449,6 +2723,7 @@
         await loadCategories();
         await loadUsers();
         await loadStreams();
+        await loadVpnProxy();
         toggleStreamAutoRefresh();
     })();
 </script>

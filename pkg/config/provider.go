@@ -5,14 +5,58 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 // DefaultUserAgent is the standard upstream User-Agent to avoid player fingerprinting and blocks.
 const DefaultUserAgent = "IPTVSmartersPro"
+
+// UpstreamProxySettings holds outbound VPN / SOCKS5 proxy configuration (e.g. NordVPN).
+type UpstreamProxySettings struct {
+	Enabled   bool   `json:"enabled"`
+	Type      string `json:"type"` // "socks5" or "http"
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	CustomURL string `json:"custom_url,omitempty"`
+}
+
+// ProxyURL returns a fully formatted proxy URL or empty string if disabled.
+func (s UpstreamProxySettings) ProxyURL() string {
+	if !s.Enabled {
+		return ""
+	}
+	if strings.TrimSpace(s.CustomURL) != "" {
+		return strings.TrimSpace(s.CustomURL)
+	}
+	host := strings.TrimSpace(s.Host)
+	if host == "" {
+		return ""
+	}
+	proto := strings.ToLower(strings.TrimSpace(s.Type))
+	if proto == "" {
+		proto = "socks5"
+	}
+	port := s.Port
+	if port <= 0 {
+		port = 1080
+	}
+	u := strings.TrimSpace(s.Username)
+	p := strings.TrimSpace(s.Password)
+	if u != "" && p != "" {
+		return fmt.Sprintf("%s://%s:%s@%s:%d", proto, url.QueryEscape(u), url.QueryEscape(p), host, port)
+	} else if u != "" {
+		return fmt.Sprintf("%s://%s@%s:%d", proto, url.QueryEscape(u), host, port)
+	}
+	return fmt.Sprintf("%s://%s:%d", proto, host, port)
+}
 
 // ProviderItem represents a distinct upstream Xtream IPTV provider subscription.
 type ProviderItem struct {
@@ -30,13 +74,14 @@ type ProviderItem struct {
 
 // ProviderData contains upstream Xtream provider settings and multi-provider list.
 type ProviderData struct {
-	XtreamBaseURL  string         `json:"xtream_base_url"`
-	BackupURLs     []string       `json:"backup_urls"`
-	XtreamUser     string         `json:"xtream_user"`
-	XtreamPassword string         `json:"xtream_password"`
-	Referer        string         `json:"referer"`
-	UserAgent      string         `json:"user_agent"`
-	Providers      []ProviderItem `json:"providers"`
+	XtreamBaseURL  string                `json:"xtream_base_url"`
+	BackupURLs     []string              `json:"backup_urls"`
+	XtreamUser     string                `json:"xtream_user"`
+	XtreamPassword string                `json:"xtream_password"`
+	Referer        string                `json:"referer"`
+	UserAgent      string                `json:"user_agent"`
+	Providers      []ProviderItem        `json:"providers"`
+	SocksProxy     UpstreamProxySettings `json:"socks_proxy"`
 }
 
 // Provider manages persistent provider configuration.
@@ -233,6 +278,45 @@ func (p *Provider) Load() {
 		p.Data.XtreamPassword = active.XtreamPassword
 		p.Data.Referer = active.Referer
 		p.Data.UserAgent = active.UserAgent
+	}
+
+	// Load or import SOCKS / VPN proxy settings
+	if loaded.SocksProxy.Host != "" || loaded.SocksProxy.CustomURL != "" {
+		p.Data.SocksProxy = loaded.SocksProxy
+	} else if p.Data.SocksProxy.Host == "" && p.Data.SocksProxy.CustomURL == "" {
+		envProxy := os.Getenv("ALL_PROXY")
+		if envProxy == "" {
+			envProxy = os.Getenv("all_proxy")
+		}
+		if envProxy == "" {
+			envProxy = os.Getenv("HTTP_PROXY")
+		}
+		if envProxy == "" {
+			envProxy = os.Getenv("http_proxy")
+		}
+		if envProxy != "" {
+			if parsed, err := url.Parse(envProxy); err == nil {
+				port := 1080
+				if h, portStr, errSplit := net.SplitHostPort(parsed.Host); errSplit == nil {
+					p.Data.SocksProxy.Host = h
+					if pInt, errConv := strconv.Atoi(portStr); errConv == nil {
+						port = pInt
+					}
+				} else {
+					p.Data.SocksProxy.Host = parsed.Host
+				}
+				p.Data.SocksProxy.Port = port
+				p.Data.SocksProxy.Type = parsed.Scheme
+				if p.Data.SocksProxy.Type == "" {
+					p.Data.SocksProxy.Type = "socks5"
+				}
+				if parsed.User != nil {
+					p.Data.SocksProxy.Username = parsed.User.Username()
+					p.Data.SocksProxy.Password, _ = parsed.User.Password()
+				}
+				p.Data.SocksProxy.Enabled = true
+			}
+		}
 	}
 
 	log.Println("[iptv-proxy] Loaded provider.json successfully")
@@ -460,4 +544,20 @@ func (p *Provider) RotateToNext() (string, bool) {
 		log.Printf("[iptv-proxy] Error persisting rotated URL: %v", err)
 	}
 	return nextURL, true
+}
+
+// GetSocksProxy returns the current upstream VPN / SOCKS5 proxy settings.
+func (p *Provider) GetSocksProxy() UpstreamProxySettings {
+	p.RLock()
+	defer p.RUnlock()
+	return p.Data.SocksProxy
+}
+
+// SetSocksProxy updates the upstream VPN / SOCKS5 proxy settings and saves to disk.
+func (p *Provider) SetSocksProxy(s UpstreamProxySettings) error {
+	p.Lock()
+	p.Data.SocksProxy = s
+	data := p.Data
+	p.Unlock()
+	return p.Save(data)
 }

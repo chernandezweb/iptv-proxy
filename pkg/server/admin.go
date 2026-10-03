@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,6 +39,9 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/users", c.adminSaveUsers)
 	admin.DELETE("/api/users/:id", c.adminDeleteUser)
 	admin.GET("/api/streams", c.adminGetStreams)
+	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
+	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
+	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
 
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
@@ -789,6 +793,115 @@ func (c *Config) adminGetStreams(ctx *gin.Context) {
 		"user_slots":    userSlots,
 		"total_relays":  len(relays),
 		"total_viewers": totalViewers,
+	})
+}
+
+func (c *Config) adminGetVpnProxy(ctx *gin.Context) {
+	socks := c.ProxyConfig.Provider.GetSocksProxy()
+	activeURL := socks.ProxyURL()
+	ctx.JSON(http.StatusOK, gin.H{
+		"settings":   socks,
+		"active_url": activeURL,
+		"active":     socks.Enabled && activeURL != "",
+	})
+}
+
+func (c *Config) adminSaveVpnProxy(ctx *gin.Context) {
+	var payload config.UpstreamProxySettings
+	if err := ctx.BindJSON(&payload); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid json payload: " + err.Error()})
+		return
+	}
+
+	if err := c.ProxyConfig.Provider.SetSocksProxy(payload); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.ApplyProxySettings(payload)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":     "success",
+		"message":    "VPN / SOCKS5 proxy settings saved and applied successfully",
+		"settings":   payload,
+		"active_url": payload.ProxyURL(),
+		"active":     payload.Enabled && payload.ProxyURL() != "",
+	})
+}
+
+func (c *Config) adminTestVpnProxy(ctx *gin.Context) {
+	var payload config.UpstreamProxySettings
+	if err := ctx.BindJSON(&payload); err != nil {
+		payload = c.ProxyConfig.Provider.GetSocksProxy()
+	}
+
+	testURLStr := payload.ProxyURL()
+	if !payload.Enabled || testURLStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"online":  false,
+			"error":   "Proxy is disabled or missing host/URL",
+			"latency": 0,
+		})
+		return
+	}
+
+	testURL, err := url.Parse(testURLStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"online":  false,
+			"error":   "Invalid proxy URL: " + err.Error(),
+			"latency": 0,
+		})
+		return
+	}
+
+	testClient := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(testURL),
+			DialContext: (&net.Dialer{
+				Timeout:   8 * time.Second,
+				KeepAlive: 15 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout: 8 * time.Second,
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	start := time.Now()
+	resp, err := testClient.Get("https://api.ipify.org?format=json")
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{
+			"online":  false,
+			"error":   "Connection failed: " + err.Error(),
+			"latency": 0,
+		})
+		return
+	}
+	defer resp.Body.Close()
+	latencyMs := time.Since(start).Milliseconds()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{
+			"online":  false,
+			"error":   "Failed reading response: " + err.Error(),
+			"latency": latencyMs,
+		})
+		return
+	}
+
+	var ipInfo struct {
+		IP string `json:"ip"`
+	}
+	if err := json.Unmarshal(body, &ipInfo); err != nil || ipInfo.IP == "" {
+		ipInfo.IP = strings.TrimSpace(string(body))
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"online":   true,
+		"ip":       ipInfo.IP,
+		"latency":  latencyMs,
+		"message":  fmt.Sprintf("Proxy connected successfully! Outbound IP: %s (%dms)", ipInfo.IP, latencyMs),
 	})
 }
 

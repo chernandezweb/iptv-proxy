@@ -74,6 +74,50 @@ func (c *responseCache) Clear() {
 	c.mu.Unlock()
 }
 
+type inFlightGroup struct {
+	mu    sync.Mutex
+	calls map[string]*inFlightCall
+}
+
+type inFlightCall struct {
+	done chan struct{}
+}
+
+func newInFlightGroup() *inFlightGroup {
+	return &inFlightGroup{
+		calls: make(map[string]*inFlightCall),
+	}
+}
+
+// Start checks if a request for key is already in flight.
+// If another call is in flight, it blocks until that call finishes and returns (true, func(){}).
+// If no call is in flight, it registers the call and returns (false, doneFunc).
+// The caller must call doneFunc() when finished.
+func (g *inFlightGroup) Start(key string) (waited bool, doneFunc func()) {
+	if g == nil {
+		return false, func() {}
+	}
+	g.mu.Lock()
+	if call, ok := g.calls[key]; ok {
+		g.mu.Unlock()
+		<-call.done
+		return true, func() {}
+	}
+
+	call := &inFlightCall{
+		done: make(chan struct{}),
+	}
+	g.calls[key] = call
+	g.mu.Unlock()
+
+	return false, func() {
+		g.mu.Lock()
+		delete(g.calls, key)
+		close(call.done)
+		g.mu.Unlock()
+	}
+}
+
 // chunkCache caches short-lived immutable HLS video segments (.ts chunks) in memory
 // so multiple clients watching the same stream don't make duplicate upstream calls.
 type chunkCache struct {

@@ -537,17 +537,116 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		action = q["action"][0]
 	}
 
-	enabled := c.GetEnabledProvidersOrFallback()
-
 	cacheKey, cacheable := c.metadataCacheKey(action, q)
 	if cacheable {
-		if entry, ok, isExpired := c.metadataCache.Get(cacheKey); ok && !isExpired {
-			log.Printf("[iptv-proxy] %v | %s |Action\t%s (cache hit)\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
+		if entry, ok, isExpired := c.metadataCache.Get(cacheKey); ok {
+			if !isExpired {
+				log.Printf("[iptv-proxy] %v | %s |Action\t%s (cache hit)\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
+				ctx.Data(http.StatusOK, entry.contentType, entry.payload)
+				return
+			}
+			// Stale cache hit: serve immediately so client never times out or drops connection, and refresh in background
+			log.Printf("[iptv-proxy] %v | %s |Action\t%s (stale cache hit, serving immediately)\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
 			ctx.Data(http.StatusOK, entry.contentType, entry.payload)
+			go c.revalidatePlayerAPI(action, q, cacheKey)
 			return
+		}
+
+		if c.metadataInFlight != nil {
+			waited, done := c.metadataInFlight.Start(cacheKey)
+			if waited {
+				if entry, ok, _ := c.metadataCache.Get(cacheKey); ok {
+					log.Printf("[iptv-proxy] %v | %s |Action\t%s (in-flight cache hit)\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
+					ctx.Data(http.StatusOK, entry.contentType, entry.payload)
+					return
+				}
+			} else {
+				defer done()
+			}
 		}
 	}
 
+	resp, httpcode, err := c.executePlayerAPI(action, q)
+	if err != nil {
+		ctx.AbortWithError(httpcode, err)
+		return
+	}
+
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		ctx.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if action == "" {
+		var loginMap map[string]interface{}
+		if errM := json.Unmarshal(payload, &loginMap); errM == nil {
+			if userInfo, ok := loginMap["user_info"].(map[string]interface{}); ok {
+				if authUserVal, exists := ctx.Get("auth_user"); exists {
+					if u, ok := authUserVal.(*config.UserItem); ok {
+						userInfo["username"] = u.Username
+						userInfo["password"] = u.Password
+						if u.MaxConnections > 0 {
+							userInfo["max_connections"] = strconv.Itoa(u.MaxConnections)
+						}
+						if c.userManager != nil {
+							userInfo["active_cons"] = strconv.Itoa(c.userManager.ActiveConnections(u.Username))
+						}
+					}
+				}
+			}
+			if serverInfo, ok := loginMap["server_info"].(map[string]interface{}); ok {
+				// Automatically use the host header from the client request (e.g. VPS IP or domain)
+				reqHost := ctx.Request.Host
+				if h, p, errH := net.SplitHostPort(reqHost); errH == nil {
+					serverInfo["url"] = h
+					if pInt, errP := strconv.Atoi(p); errP == nil {
+						serverInfo["port"] = pInt
+						serverInfo["https_port"] = pInt
+						serverInfo["rtmp_port"] = pInt
+					}
+				} else if reqHost != "" {
+					serverInfo["url"] = reqHost
+				}
+			}
+			if updated, errM := json.Marshal(loginMap); errM == nil {
+				payload = updated
+			}
+		}
+	}
+
+	log.Printf("[iptv-proxy] %v | %s |Action\t%s\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
+
+	if cacheable {
+		c.metadataCache.Set(cacheKey, payload, "application/json")
+	}
+
+	ctx.Data(http.StatusOK, "application/json", payload)
+}
+
+func (c *Config) revalidatePlayerAPI(action string, q url.Values, cacheKey string) {
+	if c.metadataInFlight != nil {
+		waited, done := c.metadataInFlight.Start(cacheKey)
+		if waited {
+			return
+		}
+		defer done()
+	}
+
+	resp, _, err := c.executePlayerAPI(action, q)
+	if err != nil {
+		return
+	}
+	payload, errM := json.Marshal(resp)
+	if errM != nil {
+		return
+	}
+	c.metadataCache.Set(cacheKey, payload, "application/json")
+	log.Printf("[iptv-proxy] Background revalidation completed for %s\n", action)
+}
+
+func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int, error) {
+	enabled := c.GetEnabledProvidersOrFallback()
 	var resp interface{}
 	var httpcode int = http.StatusOK
 	var err error
@@ -645,8 +744,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 
 			client, errClient := getClientForProvider(targetProv)
 			if errClient != nil {
-				ctx.AbortWithError(http.StatusBadGateway, errClient)
-				return
+				return nil, http.StatusBadGateway, errClient
 			}
 
 			subQ := url.Values{}
@@ -657,91 +755,110 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 
 			subResp, code, errAction := client.Action(c.ProxyConfig, action, subQ)
 			if errAction != nil {
-				ctx.AbortWithError(code, errAction)
-				return
+				return nil, code, errAction
 			}
 
-			b, _ := json.Marshal(subResp)
-			var list []map[string]interface{}
-			if errU := json.Unmarshal(b, &list); errU == nil {
-				for _, item := range list {
-					rawID := fmt.Sprint(item[idKey])
-					var virtualID string
-					origNum, numErr := strconv.Atoi(rawID)
-					if numErr == nil && provIdx > 0 {
-						vNum := (provIdx * 1000000) + origNum
-						virtualID = strconv.Itoa(vNum)
-						item[idKey] = vNum
-					} else if provIdx > 0 {
-						virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
-						item[idKey] = virtualID
-					} else {
-						virtualID = rawID
-					}
-					item["category_id"] = catParam
-
-					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
-						ProviderIndex: provIdx,
-						OriginalID:    rawID,
-						StreamType:    streamType,
-					})
-				}
-				resp = list
-			} else {
+			if len(enabled) == 1 && provIdx == 0 {
 				resp = subResp
-			}
-		} else {
-			var aggregated []map[string]interface{}
-			for provIdx, prov := range enabled {
-				client, errClient := getClientForProvider(prov)
-				if errClient != nil {
-					continue
-				}
-
-				subResp, _, errAction := client.Action(c.ProxyConfig, action, q)
-				if errAction != nil {
-					continue
-				}
-
+			} else {
 				b, _ := json.Marshal(subResp)
 				var list []map[string]interface{}
-				if errU := json.Unmarshal(b, &list); errU != nil {
-					continue
-				}
-
-				for _, item := range list {
-					rawID := fmt.Sprint(item[idKey])
-					var virtualID string
-					origNum, numErr := strconv.Atoi(rawID)
-					if numErr == nil && provIdx > 0 {
-						vNum := (provIdx * 1000000) + origNum
-						virtualID = strconv.Itoa(vNum)
-						item[idKey] = vNum
-					} else if provIdx > 0 {
-						virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
-						item[idKey] = virtualID
-					} else {
-						virtualID = rawID
-					}
-
-					if provIdx > 0 {
-						origCatStr := fmt.Sprint(item["category_id"])
-						if origCatNum, errParse := strconv.Atoi(origCatStr); errParse == nil {
-							item["category_id"] = strconv.Itoa((provIdx * 100000) + origCatNum)
+				if errU := json.Unmarshal(b, &list); errU == nil {
+					batchTargets := make(map[string]StreamRoutingTarget, len(list))
+					for _, item := range list {
+						rawID := fmt.Sprint(item[idKey])
+						var virtualID string
+						origNum, numErr := strconv.Atoi(rawID)
+						if numErr == nil && provIdx > 0 {
+							vNum := (provIdx * 1000000) + origNum
+							virtualID = strconv.Itoa(vNum)
+							item[idKey] = vNum
+						} else if provIdx > 0 {
+							virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
+							item[idKey] = virtualID
 						} else {
-							item["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origCatStr)
+							virtualID = rawID
+						}
+						item["category_id"] = catParam
+
+						batchTargets[virtualID] = StreamRoutingTarget{
+							ProviderIndex: provIdx,
+							OriginalID:    rawID,
+							StreamType:    streamType,
 						}
 					}
-
-					c.RegisterStreamTarget(virtualID, StreamRoutingTarget{
-						ProviderIndex: provIdx,
-						OriginalID:    rawID,
-						StreamType:    streamType,
-					})
-					aggregated = append(aggregated, item)
+					c.RegisterStreamTargetsBatch(batchTargets)
+					resp = list
+				} else {
+					resp = subResp
 				}
 			}
-			resp = aggregated
+		} else {
+			if len(enabled) == 1 {
+				client, errClient := getClientForProvider(enabled[0])
+				if errClient != nil {
+					return nil, http.StatusBadGateway, errClient
+				}
+				subResp, code, errAction := client.Action(c.ProxyConfig, action, q)
+				if errAction != nil {
+					return nil, code, errAction
+				}
+				resp = subResp
+			} else {
+				var aggregated []map[string]interface{}
+				batchTargets := make(map[string]StreamRoutingTarget)
+				for provIdx, prov := range enabled {
+					client, errClient := getClientForProvider(prov)
+					if errClient != nil {
+						continue
+					}
+
+					subResp, _, errAction := client.Action(c.ProxyConfig, action, q)
+					if errAction != nil {
+						continue
+					}
+
+					b, _ := json.Marshal(subResp)
+					var list []map[string]interface{}
+					if errU := json.Unmarshal(b, &list); errU != nil {
+						continue
+					}
+
+					for _, item := range list {
+						rawID := fmt.Sprint(item[idKey])
+						var virtualID string
+						origNum, numErr := strconv.Atoi(rawID)
+						if numErr == nil && provIdx > 0 {
+							vNum := (provIdx * 1000000) + origNum
+							virtualID = strconv.Itoa(vNum)
+							item[idKey] = vNum
+						} else if provIdx > 0 {
+							virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
+							item[idKey] = virtualID
+						} else {
+							virtualID = rawID
+						}
+
+						if provIdx > 0 {
+							origCatStr := fmt.Sprint(item["category_id"])
+							if origCatNum, errParse := strconv.Atoi(origCatStr); errParse == nil {
+								item["category_id"] = strconv.Itoa((provIdx * 100000) + origCatNum)
+							} else {
+								item["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origCatStr)
+							}
+						}
+
+						batchTargets[virtualID] = StreamRoutingTarget{
+							ProviderIndex: provIdx,
+							OriginalID:    rawID,
+							StreamType:    streamType,
+						}
+						aggregated = append(aggregated, item)
+					}
+				}
+				c.RegisterStreamTargetsBatch(batchTargets)
+				resp = aggregated
+			}
 		}
 
 	case "get_vod_info":
@@ -752,8 +869,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		targetProv, origID := c.ResolveTargetStream("movie", vodID)
 		client, errClient := getClientForProvider(targetProv)
 		if errClient != nil {
-			ctx.AbortWithError(http.StatusBadGateway, errClient)
-			return
+			return nil, http.StatusBadGateway, errClient
 		}
 		subQ := url.Values{}
 		for k, v := range q {
@@ -762,8 +878,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		subQ.Set("vod_id", origID)
 		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
 		if err != nil {
-			ctx.AbortWithError(httpcode, err)
-			return
+			return nil, httpcode, err
 		}
 
 	case "get_series_info":
@@ -774,8 +889,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		targetProv, origID := c.ResolveTargetStream("series", seriesID)
 		client, errClient := getClientForProvider(targetProv)
 		if errClient != nil {
-			ctx.AbortWithError(http.StatusBadGateway, errClient)
-			return
+			return nil, http.StatusBadGateway, errClient
 		}
 		subQ := url.Values{}
 		for k, v := range q {
@@ -784,8 +898,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		subQ.Set("series_id", origID)
 		resp, httpcode, err = client.Action(c.ProxyConfig, action, subQ)
 		if err != nil {
-			ctx.AbortWithError(httpcode, err)
-			return
+			return nil, httpcode, err
 		}
 
 		provIdx := c.FindProviderIndex(targetProv)
@@ -793,22 +906,24 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		var seriesData map[string]interface{}
 		if errU := json.Unmarshal(b, &seriesData); errU == nil {
 			if episodes, ok := seriesData["episodes"].(map[string]interface{}); ok {
+				batchTargets := make(map[string]StreamRoutingTarget)
 				for _, epList := range episodes {
 					if epSlice, ok := epList.([]interface{}); ok {
 						for _, epRaw := range epSlice {
 							if epMap, ok := epRaw.(map[string]interface{}); ok {
 								if epIDVal, exists := epMap["id"]; exists {
 									epIDStr := fmt.Sprint(epIDVal)
-									c.RegisterStreamTarget(epIDStr, StreamRoutingTarget{
+									batchTargets[epIDStr] = StreamRoutingTarget{
 										ProviderIndex: provIdx,
 										OriginalID:    epIDStr,
 										StreamType:    "series",
-									})
+									}
 								}
 							}
 						}
 					}
 				}
+				c.RegisterStreamTargetsBatch(batchTargets)
 			}
 		}
 
@@ -820,8 +935,7 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 		targetProv, origID := c.ResolveTargetStream("live", streamID)
 		client, errClient := getClientForProvider(targetProv)
 		if errClient != nil {
-			ctx.AbortWithError(http.StatusBadGateway, errClient)
-			return
+			return nil, http.StatusBadGateway, errClient
 		}
 		subQ := url.Values{}
 		for k, v := range q {
@@ -833,76 +947,24 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 			if httpcode == http.StatusUnauthorized || httpcode == http.StatusForbidden {
 				invalidateClientForProvider(targetProv)
 			}
-			ctx.AbortWithError(httpcode, err)
-			return
+			return nil, httpcode, err
 		}
 
 	default:
 		client, errClient := getClientForProvider(enabled[0])
 		if errClient != nil {
-			ctx.AbortWithError(http.StatusBadGateway, errClient)
-			return
+			return nil, http.StatusBadGateway, errClient
 		}
 		resp, httpcode, err = client.Action(c.ProxyConfig, action, q)
 		if err != nil {
 			if httpcode == http.StatusUnauthorized || httpcode == http.StatusForbidden {
 				invalidateClientForProvider(enabled[0])
 			}
-			ctx.AbortWithError(httpcode, err)
-			return
+			return nil, httpcode, err
 		}
 	}
 
-	payload, err := json.Marshal(resp)
-	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	if action == "" {
-		var loginMap map[string]interface{}
-		if errM := json.Unmarshal(payload, &loginMap); errM == nil {
-			if userInfo, ok := loginMap["user_info"].(map[string]interface{}); ok {
-				if authUserVal, exists := ctx.Get("auth_user"); exists {
-					if u, ok := authUserVal.(*config.UserItem); ok {
-						userInfo["username"] = u.Username
-						userInfo["password"] = u.Password
-						if u.MaxConnections > 0 {
-							userInfo["max_connections"] = strconv.Itoa(u.MaxConnections)
-						}
-						if c.userManager != nil {
-							userInfo["active_cons"] = strconv.Itoa(c.userManager.ActiveConnections(u.Username))
-						}
-					}
-				}
-			}
-			if serverInfo, ok := loginMap["server_info"].(map[string]interface{}); ok {
-				// Automatically use the host header from the client request (e.g. VPS IP or domain)
-				reqHost := ctx.Request.Host
-				if h, p, errH := net.SplitHostPort(reqHost); errH == nil {
-					serverInfo["url"] = h
-					if pInt, errP := strconv.Atoi(p); errP == nil {
-						serverInfo["port"] = pInt
-						serverInfo["https_port"] = pInt
-						serverInfo["rtmp_port"] = pInt
-					}
-				} else if reqHost != "" {
-					serverInfo["url"] = reqHost
-				}
-			}
-			if updated, errM := json.Marshal(loginMap); errM == nil {
-				payload = updated
-			}
-		}
-	}
-
-	log.Printf("[iptv-proxy] %v | %s |Action\t%s\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
-
-	if cacheable {
-		c.metadataCache.Set(cacheKey, payload, "application/json")
-	}
-
-	ctx.Data(http.StatusOK, "application/json", payload)
+	return resp, httpcode, err
 }
 
 func (c *Config) xtreamXMLTV(ctx *gin.Context) {
@@ -1193,7 +1255,9 @@ func (c *Config) metadataCacheKey(action string, q url.Values) (string, bool) {
 	}
 
 	switch action {
-	case "get_series", "get_series_info", "get_short_epg", "get_simple_data_table":
+	case "get_live_categories", "get_vod_categories", "get_series_categories",
+		"get_live_streams", "get_vod_streams", "get_vod_info", "get_series",
+		"get_series_info", "get_short_epg", "get_simple_data_table":
 		return action + "|" + canonicalizeQuery(q), true
 	default:
 		return "", false

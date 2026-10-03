@@ -108,12 +108,13 @@ type Config struct {
 
 	endpointAntiColision string
 
-	metadataCache *responseCache
-	xmltvCache    *responseCache
-	chunkCache    *chunkCache
-	userManager   *config.UserManager
-	httpClient    *http.Client
-	baseStreamURL *url.URL
+	metadataCache    *responseCache
+	metadataInFlight *inFlightGroup
+	xmltvCache       *responseCache
+	chunkCache       *chunkCache
+	userManager      *config.UserManager
+	httpClient       *http.Client
+	baseStreamURL    *url.URL
 
 	streamRoutingMap  map[string]StreamRoutingTarget
 	streamRoutingLock sync.RWMutex
@@ -158,6 +159,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 		refreshing:           make(map[string]bool),
 	}
 	cfg.metadataCache = newResponseCache(cfgData.MetadataCacheTTL)
+	cfg.metadataInFlight = newInFlightGroup()
 	cfg.xmltvCache = newResponseCache(cfgData.XMLTVCacheTTL)
 	cfg.chunkCache = newChunkCache(15 * time.Second)
 	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
@@ -487,6 +489,21 @@ func (c *Config) RegisterStreamTarget(virtualID string, target StreamRoutingTarg
 		c.streamRoutingMap = make(map[string]StreamRoutingTarget)
 	}
 	c.streamRoutingMap[virtualID] = target
+	c.streamRoutingLock.Unlock()
+}
+
+// RegisterStreamTargetsBatch saves multiple mappings between virtual stream IDs and their upstream targets with a single lock.
+func (c *Config) RegisterStreamTargetsBatch(targets map[string]StreamRoutingTarget) {
+	if c == nil || len(targets) == 0 {
+		return
+	}
+	c.streamRoutingLock.Lock()
+	if c.streamRoutingMap == nil {
+		c.streamRoutingMap = make(map[string]StreamRoutingTarget, len(targets))
+	}
+	for k, v := range targets {
+		c.streamRoutingMap[k] = v
+	}
 	c.streamRoutingLock.Unlock()
 }
 

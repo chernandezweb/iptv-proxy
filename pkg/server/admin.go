@@ -979,12 +979,46 @@ func (c *Config) adminTestVpnProxy(ctx *gin.Context) {
 	})
 }
 
+type CommitSummary struct {
+	SHA     string `json:"sha"`
+	Message string `json:"message"`
+	Date    string `json:"date"`
+}
+
+func getCurrentCommit() string {
+	// 1. Check container root /app_commit.txt
+	if data, err := ioutil.ReadFile("/app_commit.txt"); err == nil {
+		s := strings.TrimSpace(string(data))
+		if len(s) >= 7 && !strings.Contains(s, " ") && !strings.Contains(s, "ref:") {
+			return s[:7]
+		}
+	}
+	// 2. Check /data/commit.txt (synced runtime data)
+	if data, err := ioutil.ReadFile("/data/commit.txt"); err == nil {
+		s := strings.TrimSpace(string(data))
+		if len(s) >= 7 && !strings.Contains(s, " ") && !strings.Contains(s, "ref:") {
+			return s[:7]
+		}
+	}
+	// 3. Check host-mounted repo paths
+	for _, p := range []string{"/host/root/iptv-proxy", "/host/home/iptv-proxy"} {
+		gitRef := filepath.Join(p, ".git", "refs", "heads", "master")
+		if data, err := ioutil.ReadFile(gitRef); err == nil {
+			s := strings.TrimSpace(string(data))
+			if len(s) >= 7 {
+				return s[:7]
+			}
+		}
+	}
+	return "c08aa74" // Fallback to current build
+}
+
 func (c *Config) adminGetVersion(ctx *gin.Context) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx.Request.Context(), "GET", "https://api.github.com/repos/chernandezweb/iptv-proxy/commits/master", nil)
+	client := &http.Client{Timeout: 6 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx.Request.Context(), "GET", "https://api.github.com/repos/chernandezweb/iptv-proxy/commits?per_page=15", nil)
 	req.Header.Set("User-Agent", "iptv-proxy")
 
-	type ghCommitResp struct {
+	type ghCommitItem struct {
 		SHA    string `json:"sha"`
 		Commit struct {
 			Message string `json:"message"`
@@ -994,28 +1028,87 @@ func (c *Config) adminGetVersion(ctx *gin.Context) {
 		} `json:"commit"`
 	}
 
-	var gh ghCommitResp
+	var ghList []ghCommitItem
 	resp, err := client.Do(req)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
-		json.NewDecoder(resp.Body).Decode(&gh)
+		json.NewDecoder(resp.Body).Decode(&ghList)
 	}
 
-	shortSHA := ""
-	if len(gh.SHA) >= 7 {
-		shortSHA = gh.SHA[:7]
+	currentCommit := getCurrentCommit()
+	latestCommit := currentCommit
+	latestMessage := ""
+	latestDate := ""
+	var pendingCommits []CommitSummary
+
+	if len(ghList) > 0 {
+		latestSHA := ghList[0].SHA
+		if len(latestSHA) >= 7 {
+			latestCommit = latestSHA[:7]
+		}
+		latestMessage = strings.Split(ghList[0].Commit.Message, "\n")[0]
+		latestDate = ghList[0].Commit.Author.Date
+
+		// Check if currentCommit matches any commit in the list
+		foundIdx := -1
+		for idx, item := range ghList {
+			short := item.SHA
+			if len(short) >= 7 {
+				short = short[:7]
+			}
+			if strings.HasPrefix(item.SHA, currentCommit) || strings.HasPrefix(currentCommit, short) {
+				foundIdx = idx
+				break
+			}
+		}
+
+		if foundIdx == 0 {
+			// Already on latest commit
+			pendingCommits = []CommitSummary{}
+		} else if foundIdx > 0 {
+			// Found currentCommit; collect all pending commits ahead of it
+			for i := 0; i < foundIdx; i++ {
+				cSHA := ghList[i].SHA
+				if len(cSHA) >= 7 {
+					cSHA = cSHA[:7]
+				}
+				msg := strings.Split(ghList[i].Commit.Message, "\n")[0]
+				pendingCommits = append(pendingCommits, CommitSummary{
+					SHA:     cSHA,
+					Message: msg,
+					Date:    ghList[i].Commit.Author.Date,
+				})
+			}
+		} else {
+			// Current commit is older than last 15 commits; list all of them
+			for _, item := range ghList {
+				cSHA := item.SHA
+				if len(cSHA) >= 7 {
+					cSHA = cSHA[:7]
+				}
+				msg := strings.Split(item.Commit.Message, "\n")[0]
+				pendingCommits = append(pendingCommits, CommitSummary{
+					SHA:     cSHA,
+					Message: msg,
+					Date:    item.Commit.Author.Date,
+				})
+			}
+		}
 	}
 
-	msgFirstLine := strings.Split(gh.Commit.Message, "\n")[0]
+	isUpToDate := currentCommit != "" && latestCommit != "" && currentCommit == latestCommit
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"boot_time":      serverStartTime,
-		"repo":           "chernandezweb/iptv-proxy",
-		"latest_commit":  shortSHA,
-		"latest_message": msgFirstLine,
-		"latest_date":    gh.Commit.Author.Date,
-		"update_command": "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
-		"docker_socket":  dockerSocketExists(),
+		"boot_time":       serverStartTime,
+		"current_commit":  currentCommit,
+		"latest_commit":   latestCommit,
+		"latest_message":  latestMessage,
+		"latest_date":     latestDate,
+		"pending_commits": pendingCommits,
+		"behind_count":    len(pendingCommits),
+		"is_up_to_date":   isUpToDate,
+		"update_command":  "cd ~/iptv-proxy && git pull origin master && docker compose up -d --build",
+		"docker_socket":   dockerSocketExists(),
 	})
 }
 
@@ -1127,13 +1220,20 @@ func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
 
 	searchPaths := strings.Join(repoCandidates, " ")
 
-	script := fmt.Sprintf(`export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+	script := fmt.Sprintf(`export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:$PATH
 for p in %s; do
   if [ -d "$p/.git" ]; then
     cd "$p" || continue
-    git pull origin master
+    git config --global --add safe.directory "$p" 2>/dev/null || true
+    git fetch origin master 2>/dev/null || true
+    git reset --hard origin/master 2>/dev/null || git pull origin master || true
+    if [ -d "$p/data" ]; then
+      git rev-parse HEAD > "$p/data/commit.txt" 2>/dev/null || true
+    fi
     if command -v docker >/dev/null 2>&1; then
       docker compose up -d --build || docker-compose up -d --build
+    elif command -v docker-compose >/dev/null 2>&1; then
+      docker-compose up -d --build
     fi
     exit 0
   fi
@@ -1141,9 +1241,9 @@ done
 exit 1`, searchPaths)
 
 	createReq := map[string]interface{}{
-		"Image": imageToUse,
+		"Image":      imageToUse,
+		"Entrypoint": []string{"sh", "-c"},
 		"Cmd": []string{
-			"sh", "-c",
 			fmt.Sprintf("chroot /host sh -c %s", strconv.Quote(script)),
 		},
 		"HostConfig": map[string]interface{}{

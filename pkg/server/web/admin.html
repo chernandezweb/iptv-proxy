@@ -1067,8 +1067,9 @@
                 <span class="status-dot"></span>
                 <span id="statusText">Checking...</span>
             </div>
-            <button class="btn btn-secondary" onclick="openUpdateModal()" title="Check for updates from GitHub">
-                ⬆️ Updates
+            <button class="btn btn-secondary" id="updateHeaderBtn" onclick="openUpdateModal()" title="Check for updates from GitHub" style="display:inline-flex; align-items:center; gap:0.45rem;">
+                <span>⬆️ Updates</span>
+                <span id="updateHeaderBadge" class="badge" style="display:none; font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:999px;"></span>
             </button>
             <button class="btn btn-secondary" onclick="reloadAll()" title="Reload data from server">
                 🔄 Refresh
@@ -2914,48 +2915,137 @@
     }
 
     let latestUpdateCommand = 'cd ~/iptv-proxy && git pull origin master && docker compose up -d --build';
+    let currentVersionInfo = null;
+
+    function updateHeaderBadgeUI(data) {
+        const badge = document.getElementById('updateHeaderBadge');
+        const btn = document.getElementById('updateHeaderBtn');
+        if (!badge) return;
+
+        if (data && data.is_up_to_date) {
+            badge.style.display = 'inline-flex';
+            badge.textContent = '✓ Up to date';
+            badge.style.background = 'rgba(34, 197, 94, 0.15)';
+            badge.style.color = '#4ade80';
+            badge.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+            badge.style.fontWeight = '600';
+            if (btn) btn.title = `Running latest version (${data.current_commit || 'master'})`;
+        } else if (data && (data.behind_count > 0 || !data.is_up_to_date)) {
+            const count = data.behind_count || 1;
+            badge.style.display = 'inline-flex';
+            badge.textContent = `${count} new`;
+            badge.style.background = 'rgba(239, 68, 68, 0.2)';
+            badge.style.color = '#f87171';
+            badge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+            badge.style.fontWeight = '700';
+            if (btn) btn.title = `${count} new update(s) available on GitHub (${data.current_commit || '?'} → ${data.latest_commit || 'latest'})`;
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    async function checkVersionStatus() {
+        try {
+            const res = await fetch('/admin/api/version', { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            currentVersionInfo = data;
+            latestUpdateCommand = data.update_command || latestUpdateCommand;
+            updateHeaderBadgeUI(data);
+        } catch (_) {}
+    }
 
     async function openUpdateModal() {
         const modal = document.getElementById('updateModal');
         const body = document.getElementById('updateModalBody');
         const copyBtn = document.getElementById('copyUpdateCmdBtn');
         modal.style.display = 'flex';
-        copyBtn.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
         body.innerHTML = `
-            <div class="loading-state">
-                <span class="spinner"></span> Checking GitHub repository (chernandezweb/iptv-proxy)...
+            <div class="loading-state" style="padding:2.5rem 1rem; text-align:center;">
+                <span class="spinner" style="width:36px; height:36px; margin:0 auto 1rem auto;"></span>
+                <div style="font-size:0.95rem; font-weight:600; color:var(--text);">Checking GitHub repository...</div>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Comparing local commit with chernandezweb/iptv-proxy</div>
             </div>
         `;
 
         try {
-            const res = await fetch('/admin/api/version');
+            const res = await fetch('/admin/api/version', { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed to fetch version info');
             const data = await res.json();
+            currentVersionInfo = data;
             latestUpdateCommand = data.update_command || latestUpdateCommand;
+            updateHeaderBadgeUI(data);
 
-            body.innerHTML = `
-                <div style="background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem;">
-                    <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:700;">Latest Release on GitHub</div>
-                    <div style="font-size:1.1rem; font-weight:700; color:var(--text); margin-top:0.25rem;">
-                        Commit <code style="color:var(--primary);">${escapeHtml(data.latest_commit || 'master')}</code>
-                    </div>
-                    <div style="font-size:0.9rem; color:#cbd5e1; margin-top:0.4rem; line-height:1.4;">
-                        ${escapeHtml(data.latest_message || 'Latest updates applied')}
-                    </div>
-                    ${data.latest_date ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.35rem;">Published: ${new Date(data.latest_date).toLocaleString()}</div>` : ''}
-                </div>
+            const isUpToDate = !!data.is_up_to_date;
+            const pendingList = Array.isArray(data.pending_commits) ? data.pending_commits : [];
+            const behindCount = data.behind_count || pendingList.length || 0;
 
-                ${data.docker_socket ? `
-                    <div style="margin-bottom:1.25rem;">
-                        <button type="button" class="btn" id="run1ClickUpdateBtn" onclick="trigger1ClickUpdate()" style="width:100%; padding:0.85rem; font-size:1rem; font-weight:700; justify-content:center;">
-                            🚀 Update Now (Git Pull &amp; Rebuild)
-                        </button>
-                        <div style="font-size:0.75rem; color:var(--text-muted); text-align:center; margin-top:0.35rem;">
-                            1-Click update is enabled via Docker socket. Rebuild takes ~30 seconds with automatic page reload.
+            let changelogHtml = '';
+            if (!isUpToDate && pendingList.length > 0) {
+                changelogHtml = `
+                    <div style="margin-bottom:1rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                            <span style="font-size:0.82rem; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:0.5px;">
+                                📋 Commits in this update (${pendingList.length})
+                            </span>
+                            <span style="font-size:0.72rem; color:var(--text-muted);">Newest on top</span>
+                        </div>
+                        <div style="background:#090d16; border:1px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; padding:0.35rem 0.5rem;">
+                            ${pendingList.map(c => `
+                                <div style="padding:0.45rem 0.35rem; border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.82rem;">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-bottom:0.2rem;">
+                                        <a href="https://github.com/chernandezweb/iptv-proxy/commit/${encodeURIComponent(c.sha)}" target="_blank" rel="noopener" style="font-family:monospace; font-weight:700; color:#38bdf8; font-size:0.78rem; text-decoration:none;">
+                                            #${escapeHtml(c.sha)} ↗
+                                        </a>
+                                        ${c.date ? `<span style="font-size:0.72rem; color:var(--text-muted);">${new Date(c.date).toLocaleDateString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>` : ''}
+                                    </div>
+                                    <div style="color:#e2e8f0; line-height:1.35; word-break:break-word;">
+                                        ${escapeHtml(c.message)}
+                                    </div>
+                                </div>
+                            `).join('')}
                         </div>
                     </div>
-                ` : `
-                    <div style="margin-bottom:1.25rem;">
+                `;
+            } else if (isUpToDate) {
+                changelogHtml = `
+                    <div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem; display:flex; align-items:center; gap:0.75rem;">
+                        <span style="font-size:1.5rem;">✅</span>
+                        <div style="font-size:0.85rem; color:#86efac; line-height:1.4;">
+                            <strong>Your proxy is running the latest version!</strong><br>
+                            <span style="color:#bbf7d0; font-size:0.78rem;">You are up to date with the master branch.</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            let actionButtonHtml = '';
+            if (isUpToDate) {
+                actionButtonHtml = `
+                    <div style="margin-bottom:1.15rem;">
+                        <button type="button" class="btn btn-secondary" disabled style="width:100%; padding:0.85rem; font-size:0.95rem; font-weight:600; justify-content:center; opacity:0.55; cursor:not-allowed; background:rgba(255,255,255,0.03); border-color:var(--border); color:var(--text-muted);">
+                            ✓ Already up to date
+                        </button>
+                        <div style="font-size:0.75rem; color:var(--text-muted); text-align:center; margin-top:0.35rem;">
+                            No updates available. The proxy is already running the latest commit.
+                        </div>
+                    </div>
+                `;
+            } else if (data.docker_socket) {
+                actionButtonHtml = `
+                    <div style="margin-bottom:1.15rem;">
+                        <button type="button" class="btn btn-primary" id="run1ClickUpdateBtn" onclick="trigger1ClickUpdate()" style="width:100%; padding:0.85rem; font-size:1rem; font-weight:700; justify-content:center;">
+                            🚀 Install Update (${behindCount} new commit${behindCount > 1 ? 's' : ''})
+                        </button>
+                        <div style="font-size:0.75rem; color:var(--text-muted); text-align:center; margin-top:0.35rem;">
+                            1-Click update via Docker socket. Rebuilds in background with auto page reload.
+                        </div>
+                    </div>
+                `;
+            } else {
+                actionButtonHtml = `
+                    <div style="margin-bottom:1.15rem;">
                         <button type="button" class="btn btn-secondary" onclick="copyUpdateCommand()" style="width:100%; padding:0.75rem; justify-content:center;">
                             📋 Copy Update Command
                         </button>
@@ -2963,23 +3053,59 @@
                             Mount <code>/var/run/docker.sock:/var/run/docker.sock</code> in docker-compose.yml to enable the 1-Click Update button.
                         </div>
                     </div>
-                `}
+                `;
+            }
 
-                <div style="margin-bottom:0.5rem; font-size:0.875rem; font-weight:600; color:var(--text);">
+            body.innerHTML = `
+                <!-- Version Comparison Header -->
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; background:var(--bg-card-subtle); border:1px solid var(--border); border-radius:var(--radius); padding:0.85rem 1rem; margin-bottom:1rem;">
+                    <div>
+                        <div style="font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); font-weight:700; letter-spacing:0.5px;">Installed Version</div>
+                        <div style="font-family:monospace; font-size:0.95rem; font-weight:700; color:var(--text); margin-top:0.2rem;">
+                            Commit <code style="color:#e2e8f0; background:rgba(255,255,255,0.06); padding:0.15rem 0.4rem; border-radius:4px;">${escapeHtml(data.current_commit || 'unknown')}</code>
+                        </div>
+                    </div>
+                    <div style="font-size:1.1rem; color:var(--text-muted);">➔</div>
+                    <div>
+                        <div style="font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); font-weight:700; letter-spacing:0.5px;">Latest on GitHub</div>
+                        <div style="font-family:monospace; font-size:0.95rem; font-weight:700; color:var(--primary); margin-top:0.2rem;">
+                            Commit <code style="color:var(--primary); background:rgba(99,102,241,0.1); padding:0.15rem 0.4rem; border-radius:4px;">${escapeHtml(data.latest_commit || 'master')}</code>
+                        </div>
+                    </div>
+                    <div>
+                        ${isUpToDate ? `
+                            <span class="badge" style="background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid rgba(34,197,94,0.3); font-size:0.78rem; padding:0.25rem 0.55rem; font-weight:600;">
+                                ✓ Up to date
+                            </span>
+                        ` : `
+                            <span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171; border:1px solid rgba(239,68,68,0.4); font-size:0.78rem; padding:0.25rem 0.55rem; font-weight:700;">
+                                ${behindCount} update${behindCount > 1 ? 's' : ''} available
+                            </span>
+                        `}
+                    </div>
+                </div>
+
+                ${changelogHtml}
+
+                ${actionButtonHtml}
+
+                <div style="margin-bottom:0.4rem; font-size:0.82rem; font-weight:600; color:var(--text);">
                     Manual command on your VPS:
                 </div>
-                <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.75rem; font-family:monospace; font-size:0.8rem; color:#38bdf8; word-break:break-all;">
-                    ${escapeHtml(latestUpdateCommand)}
+                <div style="position:relative; background:#0b0f19; border:1px solid var(--border); border-radius:8px; padding:0.65rem 0.85rem; font-family:monospace; font-size:0.78rem; color:#38bdf8; word-break:break-all; display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+                    <span style="user-select:all;">${escapeHtml(latestUpdateCommand)}</span>
+                    <button type="button" class="btn btn-secondary" onclick="copyUpdateCommand()" style="padding:0.25rem 0.5rem; font-size:0.75rem; white-space:nowrap;">📋 Copy</button>
                 </div>
 
-                <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:0.75rem; margin-top:1rem; font-size:0.8rem; color:#cbd5e1;">
+                <div style="background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.2); border-radius:8px; padding:0.65rem 0.85rem; margin-top:0.85rem; font-size:0.78rem; color:#cbd5e1;">
                     💡 <strong>Safe Updates:</strong> All your providers, accounts, and filters live in <code>./data/</code> and are never touched or lost during updates.
                 </div>
             `;
         } catch (e) {
             body.innerHTML = `
-                <div style="color:var(--danger); padding:1rem; text-align:center;">
-                    Error checking version: ${escapeHtml(e.message)}
+                <div style="color:var(--danger); padding:1.5rem; text-align:center;">
+                    <p style="margin-bottom:0.75rem;">⚠️ Error checking version: ${escapeHtml(e.message)}</p>
+                    <button class="btn btn-secondary" onclick="openUpdateModal()">🔄 Retry</button>
                 </div>
             `;
         }
@@ -3002,7 +3128,7 @@
     }
 
     async function trigger1ClickUpdate() {
-        if (!confirm('Are you sure you want to update IPTV Proxy now?\n\nThe proxy will pull the latest code from GitHub and rebuild the Docker container in the background. This takes ~30-40 seconds.')) {
+        if (!confirm('Are you sure you want to update IPTV Proxy now?\n\nThe proxy will pull latest code from GitHub and rebuild the Docker container in the background.')) {
             return;
         }
 
@@ -3026,17 +3152,19 @@
 
                 <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted);">
                     <span id="updateElapsed">Elapsed: 0s</span>
-                    <span id="updateEta">Est. remaining: ~35s</span>
+                    <span id="updateEta">Est. remaining: ~45s</span>
                 </div>
             </div>
         `;
 
         let initialBootTime = '';
+        let initialCommit = '';
         try {
             const vRes = await fetch('/admin/api/version', { cache: 'no-store' });
             if (vRes.ok) {
                 const vData = await vRes.json();
                 initialBootTime = vData.boot_time || '';
+                initialCommit = vData.current_commit || '';
             }
         } catch (_) {}
 
@@ -3060,13 +3188,13 @@
                 return;
             }
 
-            pollUpdateProgress(initialBootTime);
+            pollUpdateProgress(initialBootTime, initialCommit);
         } catch (e) {
-            pollUpdateProgress(initialBootTime);
+            pollUpdateProgress(initialBootTime, initialCommit);
         }
     }
 
-    function pollUpdateProgress(initialBootTime) {
+    function pollUpdateProgress(initialBootTime, initialCommit) {
         const title = document.getElementById('updateStatusTitle');
         const desc = document.getElementById('updateStatusDesc');
         const bar = document.getElementById('updateProgressBar');
@@ -3076,46 +3204,68 @@
         let elapsed = 0;
         const totalEstimated = 60;
         let onlineDetected = false;
+        let sawServerDown = false;
 
         const interval = setInterval(async () => {
             elapsed++;
             if (elapsedSpan) elapsedSpan.textContent = `Elapsed: ${elapsed}s`;
 
-            const pct = Math.min(95, Math.round((elapsed / totalEstimated) * 90) + 5);
-            if (bar) bar.style.width = pct + '%';
+            const pct = Math.min(96, Math.round((elapsed / totalEstimated) * 90) + 5);
+            if (bar && !onlineDetected) bar.style.width = pct + '%';
 
             const remaining = Math.max(0, totalEstimated - elapsed);
-            if (etaSpan) etaSpan.textContent = remaining > 0 ? `Est. remaining: ~${remaining}s` : 'Finalizing restart...';
+            if (etaSpan && !onlineDetected) {
+                if (elapsed < 50) {
+                    etaSpan.textContent = `Est. remaining: ~${remaining}s`;
+                } else if (elapsed < 120) {
+                    etaSpan.textContent = 'Compiling & restarting...';
+                } else {
+                    etaSpan.textContent = 'Finishing up build...';
+                }
+            }
 
-            if (elapsed >= 12) {
+            if (elapsed >= 10) {
                 try {
                     const testRes = await fetch('/admin/api/version', { cache: 'no-store' });
                     if (testRes.ok) {
                         const testData = await testRes.json();
-                        // ONLY complete when the container has ACTUALLY restarted (different boot_time)
-                        const hasRestarted = initialBootTime && testData.boot_time && testData.boot_time !== initialBootTime;
-                        if (hasRestarted) {
+                        // Restart detection conditions
+                        const bootChanged = initialBootTime && testData.boot_time && testData.boot_time !== initialBootTime;
+                        const commitChanged = initialCommit && testData.current_commit && testData.current_commit !== initialCommit;
+                        const serverRebounded = sawServerDown;
+                        const nowUpToDate = testData.is_up_to_date && elapsed >= 20;
+
+                        if (bootChanged || commitChanged || (serverRebounded && elapsed >= 15) || nowUpToDate) {
                             clearInterval(interval);
                             onlineDetected = true;
                             if (bar) bar.style.width = '100%';
                             if (title) title.innerHTML = '✅ Update Succeeded!';
-                            if (desc) desc.textContent = 'IPTV Proxy has restarted with the newest build. Reloading interface...';
+                            if (desc) desc.innerHTML = `IPTV Proxy restarted successfully on commit <code>${escapeHtml(testData.current_commit || 'latest')}</code>. Reloading interface...`;
                             showToast('✅ IPTV Proxy updated successfully!', 'success');
                             setTimeout(() => {
                                 window.location.reload();
                             }, 1800);
                             return;
                         }
+                    } else {
+                        sawServerDown = true;
                     }
                 } catch (err) {
-                    // Container restarting, continue polling
+                    // Container stopped or restarting - expected during docker compose up
+                    sawServerDown = true;
                 }
             }
 
             if (elapsed >= 120 && !onlineDetected) {
-                clearInterval(interval);
-                if (title) title.innerHTML = '⏳ Rebuild In Progress...';
-                if (desc) desc.innerHTML = 'The Docker build is compiling in the background on your VPS. When it completes, <a href="javascript:location.reload()" style="color:var(--primary); text-decoration:underline;">refresh the page</a>.';
+                // DO NOT stop the interval! Just update message and offer manual reload button
+                if (title && !title.textContent.includes('Still In Progress')) {
+                    title.innerHTML = '⏳ Docker Build Still In Progress...';
+                    desc.innerHTML = `Compiling Go in Alpine can take ~2-3 minutes on single-core VPS servers.<br>
+                    <strong>The page will automatically reload the moment the new build is ready.</strong><br>
+                    <div style="margin-top:0.75rem;">
+                        <button class="btn btn-secondary" onclick="window.location.reload()" style="font-size:0.8rem; padding:0.35rem 0.75rem;">🔄 Reload Page Now</button>
+                    </div>`;
+                }
             }
         }, 1000);
     }
@@ -3293,6 +3443,7 @@
         await loadUsers();
         await loadStreams();
         await loadVpnProxy();
+        checkVersionStatus();
         if (state.currentTab === 'logs') {
             await fetchLogs();
         }
@@ -3306,6 +3457,8 @@
         await loadStreams();
         await loadVpnProxy();
         toggleStreamAutoRefresh();
+        checkVersionStatus();
+        setInterval(checkVersionStatus, 10 * 60 * 1000);
     })();
 </script>
 

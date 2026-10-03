@@ -1058,6 +1058,23 @@ func dockerSocketExists() bool {
 	return err == nil
 }
 
+// getDockerAPIBase dynamically negotiates the Docker API version via /version (defaulting to v1.44+)
+func getDockerAPIBase(client *http.Client) string {
+	resp, err := client.Get("http://localhost/version")
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			var ver struct {
+				ApiVersion string `json:"ApiVersion"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&ver) == nil && ver.ApiVersion != "" {
+				return "http://localhost/v" + ver.ApiVersion
+			}
+		}
+	}
+	return "http://localhost/v1.44"
+}
+
 func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
 	if !dockerSocketExists() {
 		ctx.JSON(http.StatusOK, gin.H{
@@ -1074,16 +1091,17 @@ func (c *Config) adminTriggerUpdate(ctx *gin.Context) {
 		},
 	}
 	client := &http.Client{Transport: tr, Timeout: 30 * time.Second}
+	apiBase := getDockerAPIBase(client)
 
 	// Clean up any stale updater container from earlier runs
-	delReq, _ := http.NewRequest("DELETE", "http://localhost/v1.40/containers/iptv_proxy_updater?force=true", nil)
+	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/containers/iptv_proxy_updater?force=true", apiBase), nil)
 	if delResp, err := client.Do(delReq); err == nil {
 		delResp.Body.Close()
 	}
 
 	// Discover host repo path by inspecting container mounts for /data
 	var repoCandidates []string
-	inspResp, err := client.Get("http://localhost/v1.40/containers/iptv-proxy/json")
+	inspResp, err := client.Get(fmt.Sprintf("%s/containers/iptv-proxy/json", apiBase))
 	if err == nil && inspResp.StatusCode == http.StatusOK {
 		var insp struct {
 			Mounts []struct {
@@ -1145,7 +1163,7 @@ exit 1`, searchPaths)
 	}
 
 	bodyBytes, _ := json.Marshal(createReq)
-	resp, err := client.Post("http://localhost/v1.40/containers/create?name=iptv_proxy_updater", "application/json", bytes.NewReader(bodyBytes))
+	resp, err := client.Post(fmt.Sprintf("%s/containers/create?name=iptv_proxy_updater", apiBase), "application/json", bytes.NewReader(bodyBytes))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"supported": false,
@@ -1158,10 +1176,10 @@ exit 1`, searchPaths)
 
 	// If alpine:3 is not present in local cache, pull it and retry
 	if resp.StatusCode == http.StatusNotFound {
-		pullResp, pErr := client.Post("http://localhost/v1.40/images/create?fromImage=alpine:3", "application/json", nil)
+		pullResp, pErr := client.Post(fmt.Sprintf("%s/images/create?fromImage=alpine:3", apiBase), "application/json", nil)
 		if pErr == nil {
 			pullResp.Body.Close()
-			resp2, err2 := client.Post("http://localhost/v1.40/containers/create?name=iptv_proxy_updater", "application/json", bytes.NewReader(bodyBytes))
+			resp2, err2 := client.Post(fmt.Sprintf("%s/containers/create?name=iptv_proxy_updater", apiBase), "application/json", bytes.NewReader(bodyBytes))
 			if err2 == nil {
 				resp = resp2
 				defer resp.Body.Close()
@@ -1192,7 +1210,7 @@ exit 1`, searchPaths)
 	}
 
 	// Start the updater container
-	startResp, err := client.Post(fmt.Sprintf("http://localhost/v1.40/containers/%s/start", createResp.ID), "application/json", nil)
+	startResp, err := client.Post(fmt.Sprintf("%s/containers/%s/start", apiBase, createResp.ID), "application/json", nil)
 	if err != nil || (startResp.StatusCode != http.StatusOK && startResp.StatusCode != http.StatusNoContent) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"supported": false,
@@ -1267,6 +1285,7 @@ func (c *Config) adminGetLogs(ctx *gin.Context) {
 			},
 		}
 		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+		apiBase := getDockerAPIBase(client)
 
 		candidates := []string{"iptv-proxy"}
 		if h, err := os.Hostname(); err == nil && h != "" {
@@ -1274,7 +1293,7 @@ func (c *Config) adminGetLogs(ctx *gin.Context) {
 		}
 
 		for _, name := range candidates {
-			u := fmt.Sprintf("http://localhost/v1.40/containers/%s/logs?stdout=true&stderr=true&tail=%d&timestamps=false", name, tail)
+			u := fmt.Sprintf("%s/containers/%s/logs?stdout=true&stderr=true&tail=%d&timestamps=false", apiBase, name, tail)
 			resp, err := client.Get(u)
 			if err == nil && resp.StatusCode == http.StatusOK {
 				body, _ := ioutil.ReadAll(resp.Body)

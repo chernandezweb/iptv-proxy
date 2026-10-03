@@ -25,3 +25,10 @@ iptv/iptv.m3u
 # Persistent runtime data
 data/
 
+# Local Docker overrides and environment files
+.env
+docker-compose.override.yml
+docker-compose.override.yaml
+*.override.yml
+*.override.yaml
+

@@ -138,11 +138,11 @@ docker compose up -d --build
 
 Open your browser and navigate to:
 ```text
-http://<YOUR_VPS_IP>:8060/admin/
+http://<YOUR_VPS_IP>:8080/admin/
 ```
 
-* **Username**: The `USER` set in `docker-compose.yml`
-* **Password**: The `PASSWORD` set in `docker-compose.yml`
+* **Username**: `admin` (or customized in Web Admin -> Users tab)
+* **Password**: `admin` (or customized in Web Admin -> Users tab)
 
 ### What You Can Do in the Admin UI:
 1. **Providers Tab**:
@@ -223,6 +223,20 @@ Some IPTV providers block standard HTTP clients or specific User-Agents. Set `US
      netfilter-persistent save
      ```
    * **Cloud Provider Web Console:** Check your VPS provider's portal (AWS Security Groups, Oracle Ingress Rules, Google Cloud Firewall, Hetzner Firewall) to ensure port `8080` (TCP) is allowed for inbound traffic from `0.0.0.0/0`.
+
+### 5. Safe Git Updates Without Merge Conflicts
+* **Your settings are 100% safe:** All IPTV providers, users, passwords, NordVPN settings, and filters are stored in `./data/` (`provider.json`, `users.json`, `filters.json`). Git **never** touches the `./data/` folder during updates!
+* **If git pull says `untracked file docker-compose.yml would be overwritten` (for older installs):**
+  ```bash
+  cp docker-compose.yml docker-compose.yml.bak
+  rm docker-compose.yml
+  git pull origin master
+  cp docker-compose.yml.bak docker-compose.yml
+  git update-index --skip-worktree docker-compose.yml
+  docker compose up -d --build
+  ```
+* **Customizing Ports without modifying tracked files:**
+  You can create an optional `.env` file (e.g. `PORT=9000`) or a `docker-compose.override.yml`. Both are ignored by Git, ensuring future `git pull` commands run smoothly with zero conflicts.
 
 ---
 

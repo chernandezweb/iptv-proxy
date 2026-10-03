@@ -1453,8 +1453,14 @@ fi`, strconv.Quote(script), strconv.Quote(script), strconv.Quote(script), strcon
 }
 
 func (c *Config) adminGetUpdateLogs(ctx *gin.Context) {
+	dataDir := "/data"
+	if c != nil && c.dataDir != "" {
+		dataDir = c.dataDir
+	} else if env := os.Getenv("DATA_DIR"); env != "" {
+		dataDir = env
+	}
 	candidates := []string{
-		filepath.Join(c.DataDir, "update.log"),
+		filepath.Join(dataDir, "update.log"),
 		"/data/update.log",
 		"/tmp/iptv_update.log",
 		"/host/tmp/iptv_update.log",

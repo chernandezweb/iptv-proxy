@@ -337,7 +337,8 @@ func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *ht
 		if n > 0 {
 			watchdog.Reset(stallTimeout)
 			chunk := make([]byte, 0, len(partial)+n)
-			chunk = append(chunk, partial..., buf[:n]...)
+			chunk = append(chunk, partial...)
+			chunk = append(chunk, buf[:n]...)
 			partial = nil
 
 			if r.ts {

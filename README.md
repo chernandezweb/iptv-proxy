@@ -18,8 +18,6 @@ A high-performance IPTV proxy for **Xtream Codes** and **M3U** playlists with bu
 
 ---
 
-## 🚀 Quick Start on a VPS (Debian / Ubuntu)
-
 ## 🚀 Quick Start on a VPS (Zero-Config Setup)
 
 You do **not** need to create or edit any YAML or configuration files to get started! You can boot the proxy with a single command and configure all providers, users, and category filters directly from the responsive Web Admin interface.
@@ -27,18 +25,43 @@ You do **not** need to create or edit any YAML or configuration files to get sta
 ### Step 1: Install Docker on your VPS (Debian / Ubuntu)
 ```bash
 apt update && apt upgrade -y
-apt install -y docker.io docker-compose curl git jq
+apt install -y docker.io docker-compose curl git jq ufw
 systemctl enable --now docker
 ```
 
-### Step 2: Clone and Start
+### Step 2: Configure Firewall & Open Ports
+Make sure port `8080` (and `22` for SSH) are open so your IPTV apps and browser can connect:
+
+```bash
+# 1. Allow SSH first so you don't get locked out of your VPS!
+ufw allow 22/tcp
+
+# 2. Open port 8080 for the IPTV Proxy & Web Admin
+ufw allow 8080/tcp
+
+# 3. Enable UFW firewall
+ufw --force enable
+ufw status
+```
+
+> [!IMPORTANT]
+> **Cloud Provider Firewalls (Oracle Cloud, AWS EC2, GCP, Hetzner, OVH, DigitalOcean):**
+> In addition to the VPS command line, you **must** allow TCP ingress on port `8080` in your Cloud Console's **Security Groups** or **Security Lists** (Source CIDR: `0.0.0.0/0` -> Destination Port: `8080`).
+>
+> **Oracle Cloud Ubuntu Users:** Oracle instances have an extra `iptables` rule that blocks ports by default even when UFW is open. Run:
+> ```bash
+> iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8080 -j ACCEPT
+> netfilter-persistent save 2>/dev/null || true
+> ```
+
+### Step 3: Clone and Start
 ```bash
 git clone https://github.com/chernandezweb/iptv-proxy.git ~/iptv-proxy
 cd ~/iptv-proxy
 docker compose up -d --build
 ```
 
-### Step 3: Open the Web Admin Dashboard
+### Step 4: Open the Web Admin Dashboard
 Open your browser (on desktop or mobile) and go to:
 ```text
 http://<YOUR_VPS_IP>:8080/admin/
@@ -227,6 +250,23 @@ When active, requests to your IPTV provider originate from NordVPN's IP rather t
 ### 3. Upstream Provider Returns 403 Forbidden
 Some IPTV providers block standard HTTP clients or specific User-Agents. Set `USER_AGENT: "IPTVSmartersPro"` or `"TiviMate/4.7.0 (Android TV)"` in `docker-compose.yml`.
 
+### 4. Cannot reach Web Admin or Streams (Connection Timed Out / Refused)
+1. Verify the container is running and healthy:
+   ```bash
+   docker ps
+   ```
+2. Test local connectivity directly on the VPS:
+   ```bash
+   curl -I http://127.0.0.1:8080/
+   ```
+3. If it answers locally but you cannot connect from your browser or IPTV player, a firewall is blocking incoming traffic on port 8080:
+   * **UFW (Ubuntu/Debian):** Run `ufw allow 8080/tcp && ufw reload`
+   * **Oracle Cloud Ubuntu:** Oracle images include strict default iptables rules. Run:
+     ```bash
+     iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8080 -j ACCEPT
+     netfilter-persistent save
+     ```
+   * **Cloud Provider Web Console:** Check your VPS provider's portal (AWS Security Groups, Oracle Ingress Rules, Google Cloud Firewall, Hetzner Firewall) to ensure port `8080` (TCP) is allowed for inbound traffic from `0.0.0.0/0`.
 
 ---
 

@@ -3031,6 +3031,15 @@
             </div>
         `;
 
+        let initialBootTime = '';
+        try {
+            const vRes = await fetch('/admin/api/version', { cache: 'no-store' });
+            if (vRes.ok) {
+                const vData = await vRes.json();
+                initialBootTime = vData.boot_time || '';
+            }
+        } catch (_) {}
+
         try {
             const res = await fetch('/admin/api/update', { method: 'POST' });
             const data = await res.json();
@@ -3051,13 +3060,13 @@
                 return;
             }
 
-            pollUpdateProgress();
+            pollUpdateProgress(initialBootTime);
         } catch (e) {
-            pollUpdateProgress();
+            pollUpdateProgress(initialBootTime);
         }
     }
 
-    function pollUpdateProgress() {
+    function pollUpdateProgress(initialBootTime) {
         const title = document.getElementById('updateStatusTitle');
         const desc = document.getElementById('updateStatusDesc');
         const bar = document.getElementById('updateProgressBar');
@@ -3065,44 +3074,48 @@
         const etaSpan = document.getElementById('updateEta');
 
         let elapsed = 0;
-        const totalEstimated = 35;
+        const totalEstimated = 60;
         let onlineDetected = false;
 
         const interval = setInterval(async () => {
             elapsed++;
             if (elapsedSpan) elapsedSpan.textContent = `Elapsed: ${elapsed}s`;
 
-            const pct = Math.min(95, Math.round((elapsed / totalEstimated) * 90) + 10);
+            const pct = Math.min(95, Math.round((elapsed / totalEstimated) * 90) + 5);
             if (bar) bar.style.width = pct + '%';
 
             const remaining = Math.max(0, totalEstimated - elapsed);
             if (etaSpan) etaSpan.textContent = remaining > 0 ? `Est. remaining: ~${remaining}s` : 'Finalizing restart...';
 
-            if (elapsed >= 10) {
+            if (elapsed >= 12) {
                 try {
                     const testRes = await fetch('/admin/api/version', { cache: 'no-store' });
                     if (testRes.ok) {
                         const testData = await testRes.json();
-                        clearInterval(interval);
-                        onlineDetected = true;
-                        if (bar) bar.style.width = '100%';
-                        if (title) title.innerHTML = '✅ Update Succeeded!';
-                        if (desc) desc.textContent = 'IPTV Proxy has restarted with the newest version. Reloading interface...';
-                        showToast('✅ IPTV Proxy updated successfully!', 'success');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1800);
-                        return;
+                        // ONLY complete when the container has ACTUALLY restarted (different boot_time)
+                        const hasRestarted = initialBootTime && testData.boot_time && testData.boot_time !== initialBootTime;
+                        if (hasRestarted) {
+                            clearInterval(interval);
+                            onlineDetected = true;
+                            if (bar) bar.style.width = '100%';
+                            if (title) title.innerHTML = '✅ Update Succeeded!';
+                            if (desc) desc.textContent = 'IPTV Proxy has restarted with the newest build. Reloading interface...';
+                            showToast('✅ IPTV Proxy updated successfully!', 'success');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1800);
+                            return;
+                        }
                     }
                 } catch (err) {
                     // Container restarting, continue polling
                 }
             }
 
-            if (elapsed >= 90 && !onlineDetected) {
+            if (elapsed >= 120 && !onlineDetected) {
                 clearInterval(interval);
-                if (title) title.innerHTML = '⏳ Rebuild Taking Longer...';
-                if (desc) desc.innerHTML = 'The rebuild is still in progress on your VPS. Please wait a moment and <a href="javascript:location.reload()" style="color:var(--primary); text-decoration:underline;">refresh the page</a>.';
+                if (title) title.innerHTML = '⏳ Rebuild In Progress...';
+                if (desc) desc.innerHTML = 'The Docker build is compiling in the background on your VPS. When it completes, <a href="javascript:location.reload()" style="color:var(--primary); text-decoration:underline;">refresh the page</a>.';
             }
         }, 1000);
     }

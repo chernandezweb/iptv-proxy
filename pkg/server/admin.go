@@ -27,6 +27,8 @@ import (
 //go:embed web/*
 var webFS embed.FS
 
+var serverStartTime = time.Now().UTC().Format(time.RFC3339Nano)
+
 type AdminCredentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -1007,6 +1009,7 @@ func (c *Config) adminGetVersion(ctx *gin.Context) {
 	msgFirstLine := strings.Split(gh.Commit.Message, "\n")[0]
 
 	ctx.JSON(http.StatusOK, gin.H{
+		"boot_time":      serverStartTime,
 		"repo":           "chernandezweb/iptv-proxy",
 		"latest_commit":  shortSHA,
 		"latest_message": msgFirstLine,
@@ -1145,7 +1148,7 @@ exit 1`, searchPaths)
 		},
 		"HostConfig": map[string]interface{}{
 			"Binds": []string{
-				"/:/host:rw",
+				"/:/host:rbind,rw",
 				"/var/run/docker.sock:/var/run/docker.sock",
 			},
 			"Privileged": true,

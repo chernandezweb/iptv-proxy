@@ -394,13 +394,13 @@ func newUpstreamHTTPClient(cfg *Config) *http.Client {
 		Proxy: proxyFunc,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: 15 * time.Second,
 		}).DialContext,
 		ForceAttemptHTTP2:     false,
-		MaxIdleConns:          512,
-		MaxIdleConnsPerHost:   128,
-		MaxConnsPerHost:       256,
-		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          256,
+		MaxIdleConnsPerHost:   32,
+		MaxConnsPerHost:       64,
+		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
@@ -410,6 +410,77 @@ func newUpstreamHTTPClient(cfg *Config) *http.Client {
 		Transport: transport,
 		Timeout:   0,
 	}
+}
+
+// isProxyError checks if an error originates from the outbound SOCKS/HTTP proxy transport
+// rather than the upstream IPTV provider itself.
+func isProxyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "socks") ||
+		strings.Contains(s, "proxyconnect") ||
+		strings.Contains(s, "authentication failed")
+}
+
+// isTransientNetworkOrProxyErr checks if an error is likely a brief network or SOCKS proxy glitch
+// that should be retried before aborting or triggering provider failover.
+func isTransientNetworkOrProxyErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "socks") ||
+		strings.Contains(s, "proxyconnect") ||
+		strings.Contains(s, "authentication failed") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "timeout") ||
+		strings.Contains(s, "eof")
+}
+
+// doRequestWithProxyRetry executes an HTTP request, automatically retrying up to 2 times
+// with backoff and idle connection flushing if a transient SOCKS/proxy or network handshake error occurs.
+func (c *Config) doRequestWithProxyRetry(client *http.Client, req *http.Request) (*http.Response, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode < 400 {
+		return resp, nil
+	}
+
+	if err != nil && isTransientNetworkOrProxyErr(err) {
+		for attempt := 1; attempt <= 2; attempt++ {
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+			// Close idle connections to flush dead or rate-limited SOCKS sockets from the pool
+			if t, ok := client.Transport.(*http.Transport); ok {
+				t.CloseIdleConnections()
+			}
+			backoff := time.Duration(attempt*300) * time.Millisecond
+			log.Printf("[iptv-proxy] Transient proxy/network glitch on %s (attempt %d/2: %v); auto-retrying in %v...", req.URL.Host, attempt, err, backoff)
+			time.Sleep(backoff)
+
+			retryReq := req.Clone(req.Context())
+			if req.GetBody != nil {
+				if body, bErr := req.GetBody(); bErr == nil {
+					retryReq.Body = body
+				}
+			}
+			resp, err = client.Do(retryReq)
+			if err == nil && resp.StatusCode < 400 {
+				log.Printf("[iptv-proxy] Auto-recovered from proxy glitch on attempt %d for %s", attempt, req.URL.Host)
+				return resp, nil
+			}
+		}
+	}
+
+	return resp, err
 }
 
 // GetUpstreamUserAgent returns configured masquerade User-Agent or default Chrome UA.

@@ -168,13 +168,15 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 		req.Header.Del("If-Range")
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.doRequestWithProxyRetry(client, req)
 	if err == nil && resp.StatusCode < 400 {
 		return resp, nil
 	}
 
 	// If the primary request failed (network/timeout error) or returned 5xx server error,
 	// automatically failover across configured backup URLs.
+	// NOTE: Only attempt failover across backup URLs if the error is NOT caused by our local SOCKS/proxy.
+	// Outbound SOCKS authentication/handshake issues are local proxy issues, not provider outages.
 	backupURLs := c.GetAllProviderURLs()
 	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
 		for _, prov := range c.ProxyConfig.Provider.GetProviders() {
@@ -188,7 +190,7 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 			}
 		}
 	}
-	if len(backupURLs) > 1 {
+	if !isProxyError(err) && len(backupURLs) > 1 {
 		currentHost := req.URL.Host
 		for _, bURL := range backupURLs {
 			parsedBackup, errP := url.Parse(bURL)
@@ -203,7 +205,7 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 			backupReq.Header.Set("Referer", bURL)
 
 			log.Printf("[iptv-proxy] Upstream %s failed/down (err=%v); attempting failover to backup URL %s...", currentHost, err, bURL)
-			bResp, bErr := client.Do(backupReq)
+			bResp, bErr := c.doRequestWithProxyRetry(client, backupReq)
 			if bErr == nil && bResp.StatusCode < 400 {
 				if resp != nil && resp.Body != nil {
 					resp.Body.Close()
@@ -224,7 +226,7 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 
 	if fallbackReq := c.retryRequestWithBaseHost(ctx, req, err); fallbackReq != nil {
 		log.Printf("[iptv-proxy] DNS lookup failed for %s; retrying against base host %s", req.URL.String(), fallbackReq.URL.Host)
-		return client.Do(fallbackReq)
+		return c.doRequestWithProxyRetry(client, fallbackReq)
 	}
 
 	return nil, err

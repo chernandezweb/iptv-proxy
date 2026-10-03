@@ -1335,8 +1335,8 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 	}
 	cleanUpstreamHeaders(req.Header)
 
-	resp, err := client.Do(req)
-	if err != nil || (resp != nil && resp.StatusCode >= 400) {
+	resp, err := c.doRequestWithProxyRetry(client, req)
+	if (err != nil || (resp != nil && resp.StatusCode >= 400)) && !isProxyError(err) {
 		backupURLs := c.GetAllProviderURLs()
 		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
 			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
@@ -1366,7 +1366,7 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 					bReq.Header.Del("Referer")
 				}
 
-				bResp, bErr := client.Do(bReq)
+				bResp, bErr := c.doRequestWithProxyRetry(client, bReq)
 				if bErr == nil && bResp.StatusCode < 400 {
 					if resp != nil && resp.Body != nil {
 						resp.Body.Close()
@@ -1440,7 +1440,7 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 		}
 		cleanUpstreamHeaders(hlsReq.Header)
 
-		hlsResp, err := client.Do(hlsReq)
+		hlsResp, err := c.doRequestWithProxyRetry(client, hlsReq)
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 			return

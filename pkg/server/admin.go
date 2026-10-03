@@ -1148,7 +1148,7 @@ exit 1`, searchPaths)
 		},
 		"HostConfig": map[string]interface{}{
 			"Binds": []string{
-				"/:/host:rbind,rw",
+				"/:/host:rw",
 				"/var/run/docker.sock:/var/run/docker.sock",
 			},
 			"Privileged": true,

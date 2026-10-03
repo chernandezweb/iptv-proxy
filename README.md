@@ -80,24 +80,81 @@ All configurations are automatically saved to `./data/` on your host and persist
 
 ---
 
-## 🛡️ NordVPN SOCKS5 Setup (100% Web UI or Docker Compose)
+## 🛡️ Upstream VPN / SOCKS5 Setup (NordVPN Recommended & Multi-VPN Support)
 
-Using NordVPN SOCKS5 hides your VPS IP address from your IPTV provider and avoids ISP blocks or throttling without installing VPN software on the host.
+Routing outbound IPTV traffic through a SOCKS5 or HTTP proxy hides your VPS IP address from your IPTV providers, avoids ISP throttling/blocks, and bypasses regional geo-restrictions—without having to route the entire VPS network through a VPN.
 
-### 1. Get your NordVPN Service Credentials
-> **Important:** SOCKS5 does **NOT** use your standard NordVPN email/password. You must generate **Service Credentials**:
+> **⭐ Recommendation:** **NordVPN** is the recommended choice due to its high-bandwidth SOCKS5 infrastructure in Sweden, Netherlands, and USA, providing seamless zero-buffering 1080p/4K IPTV streaming. However, **any standard SOCKS5 or HTTP proxy works**.
+
+---
+
+### Supported VPN & Proxy Providers Quick Reference
+
+| Provider | Protocol | Host / Endpoint | Port | Credentials Needed |
+| :--- | :--- | :--- | :--- | :--- |
+| **⭐ NordVPN (Recommended)** | SOCKS5 | `se.socks.nordhold.net` *(or `nl`, `us`, `de`)* | `1080` | Unique Service Credentials *(from Nord Dashboard)* |
+| **Private Internet Access (PIA)** | SOCKS5 | `proxy-nl.privateinternetaccess.com` | `1080` | Generated SOCKS credentials *(starts with `x`)* |
+| **TorGuard** | SOCKS5 | `proxy.torguard.org` | `1080` | TorGuard Proxy credentials |
+| **IPVanish** | SOCKS5 | `socks.ipvanish.com` | `1080` | IPVanish account credentials |
+| **Windscribe** | SOCKS5 | `socks5.windscribe.com` | `1080` | Windscribe SOCKS5 credentials |
+| **Gluetun Sidecar** *(Mullvad, Proton, WireGuard)* | SOCKS5 | `gluetun` *(Docker container)* | `1080` | None *(handled by container)* |
+| **Custom / Self-Hosted** *(Dante, Squid, Shadowsocks)* | SOCKS5 / HTTP | `<YOUR_SERVER_IP>` | `1080` / `8080` | Username / Password *(if enabled)* |
+
+---
+
+### Step-by-Step Configuration Guides
+
+#### 1. ⭐ NordVPN (Recommended)
 1. Log in to your [Nord Account Dashboard](https://my.nordaccount.com/).
-2. Navigate to **Services** → **NordVPN** → **Manual setup** (or **Service credentials**).
-3. Copy your generated **Username** and **Password**.
+2. Navigate to **Services** → **NordVPN** → **Manual Setup** (or **Service Credentials**).
+3. Copy your generated **Username** and **Password** *(these are different from your login email)*.
+4. In the IPTV Proxy Web Admin (**🛡️ VPN / Proxy** tab), select the **NordVPN - Sweden** preset.
+5. Paste your service credentials, click **🧪 Test Proxy & Check IP**, and click **💾 Save & Apply Proxy**.
 
-### 2. Configure via the Web Admin (Recommended)
-1. Open **`http://<YOUR_VPS_IP>:8080/admin/`** and go to the **🛡️ VPN / Proxy** tab.
-2. Check **Enable Outbound VPN / SOCKS5 Proxy**.
-3. Pick a server location from the **NordVPN Quick Presets** dropdown (e.g. *Sweden* or *Netherlands*).
-4. Enter your NordVPN Service Username & Password.
-5. Click **🧪 Test Proxy & Check IP** to verify connectivity, then click **💾 Save & Apply Proxy**.
+#### 2. Private Internet Access (PIA)
+1. Log in to the [PIA Client Control Panel](https://www.privateinternetaccess.com/pages/client-sign-in).
+2. Scroll to **Generate PPTP/L2TP/SOCKS Username and Password** and click **Generate**.
+3. In the Web Admin, select the **Private Internet Access (PIA) - Netherlands** preset (`proxy-nl.privateinternetaccess.com:1080`).
+4. Enter your generated `x` username and password, test, and save.
 
-*(Alternatively, you can also set `ALL_PROXY: "socks5://USER:PASS@se.socks.nordhold.net:1080"` in `docker-compose.yml` if you prefer environment variables).*
+#### 3. TorGuard
+1. Log into your [TorGuard Client Area](https://torguard.net/clientarea.php).
+2. Go to **My Services** → select your proxy package → **Manage Credentials**.
+3. Set your Proxy Username and Password.
+4. In the Web Admin, select the **TorGuard - SOCKS5** preset (`proxy.torguard.org:1080`) and save.
+
+#### 4. IPVanish
+1. SOCKS5 access is included with your IPVanish subscription.
+2. In the Web Admin, select **IPVanish - SOCKS5** (`socks.ipvanish.com:1080`).
+3. Enter your standard IPVanish account username and password and save.
+
+#### 5. Windscribe
+1. Log in to your [Windscribe Account](https://windscribe.com/myaccount).
+2. Navigate to **Account Settings** → **SOCKS5 Credentials** to view your credentials.
+3. In the Web Admin, select **Windscribe - SOCKS5** (`socks5.windscribe.com:1080`) and enter your credentials.
+
+#### 6. WireGuard / OpenVPN via Gluetun Sidecar (Mullvad, ProtonVPN, ExpressVPN)
+If your VPN provider only offers `.conf` or WireGuard configs (such as Mullvad or ProtonVPN), run [Gluetun](https://github.com/qdm12/gluetun) in your `docker-compose.yml`:
+
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad # or protonvpn, surfshark, custom
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=your_key
+      - WIREGUARD_ADDRESSES=10.64.0.1/32
+    ports:
+      - "1080:1080" # Built-in local SOCKS5 proxy
+
+  iptv-proxy:
+    # ... existing iptv-proxy configuration ...
+```
+
+In the Web Admin, select **Gluetun Sidecar (gluetun:1080)** with no username or password required!
 
 ---
 

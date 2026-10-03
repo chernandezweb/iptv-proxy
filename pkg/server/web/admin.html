@@ -1528,28 +1528,46 @@
 
             <!-- Server Quick Presets -->
             <div class="form-group" style="margin-bottom:1.25rem;">
-                <label class="form-label">NordVPN Quick Presets</label>
-                <select class="form-input" id="nordPresetSelect" onchange="applyNordPreset()">
-                    <option value="">-- Choose a NordVPN Server Preset (or enter custom) --</option>
-                    <option value="se.socks.nordhold.net:1080">Sweden (se.socks.nordhold.net:1080) [Recommended]</option>
-                    <option value="nl.socks.nordhold.net:1080">Netherlands (nl.socks.nordhold.net:1080)</option>
-                    <option value="us.socks.nordhold.net:1080">United States (us.socks.nordhold.net:1080)</option>
-                    <option value="de.socks.nordhold.net:1080">Germany (de.socks.nordhold.net:1080)</option>
-                    <option value="ie.socks.nordhold.net:1080">Ireland (ie.socks.nordhold.net:1080)</option>
+                <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>VPN / SOCKS5 Server Presets</span>
+                    <span style="font-size:0.75rem; color:var(--primary); font-weight:600;">⭐ NordVPN Recommended</span>
+                </label>
+                <select class="form-input" id="vpnPresetSelect" onchange="applyVpnPreset()">
+                    <option value="">-- Choose a Server Preset (or enter custom server below) --</option>
+                    <optgroup label="⭐ NordVPN (Recommended Choice - Fast &amp; Reliable)">
+                        <option value="se.socks.nordhold.net:1080">NordVPN - Sweden (se.socks.nordhold.net:1080) [Top Choice]</option>
+                        <option value="nl.socks.nordhold.net:1080">NordVPN - Netherlands (nl.socks.nordhold.net:1080)</option>
+                        <option value="us.socks.nordhold.net:1080">NordVPN - United States (us.socks.nordhold.net:1080)</option>
+                        <option value="de.socks.nordhold.net:1080">NordVPN - Germany (de.socks.nordhold.net:1080)</option>
+                        <option value="ie.socks.nordhold.net:1080">NordVPN - Ireland (ie.socks.nordhold.net:1080)</option>
+                    </optgroup>
+                    <optgroup label="🌐 Other Supported VPNs with Native SOCKS5">
+                        <option value="proxy-nl.privateinternetaccess.com:1080">Private Internet Access (PIA) - Netherlands (proxy-nl.privateinternetaccess.com:1080)</option>
+                        <option value="socks.ipvanish.com:1080">IPVanish - SOCKS5 (socks.ipvanish.com:1080)</option>
+                        <option value="proxy.torguard.org:1080">TorGuard - SOCKS5 (proxy.torguard.org:1080)</option>
+                        <option value="socks5.windscribe.com:1080">Windscribe - SOCKS5 (socks5.windscribe.com:1080)</option>
+                    </optgroup>
+                    <optgroup label="🐳 WireGuard / OpenVPN Docker Sidecar (Gluetun)">
+                        <option value="gluetun:1080">Gluetun Sidecar (gluetun:1080 - Mullvad, Proton, Surfshark, etc.)</option>
+                        <option value="127.0.0.1:1080">Local Host SOCKS5 (127.0.0.1:1080)</option>
+                    </optgroup>
                 </select>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                    Selecting a preset auto-fills the host and port. You can also manually type any custom SOCKS5 or HTTP proxy server.
+                </div>
             </div>
 
             <div class="form-grid" style="margin-bottom:1.25rem;">
                 <div class="form-group">
                     <label class="form-label">Proxy Protocol</label>
                     <select class="form-input" id="vpnTypeInput">
-                        <option value="socks5">SOCKS5 (NordVPN standard)</option>
-                        <option value="http">HTTP Proxy</option>
+                        <option value="socks5">SOCKS5 (NordVPN, PIA, TorGuard, IPVanish standard)</option>
+                        <option value="http">HTTP / HTTPS Proxy</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Proxy Server Host <span style="color:var(--danger)">*</span></label>
-                    <input type="text" class="form-input" id="vpnHostInput" placeholder="e.g. se.socks.nordhold.net">
+                    <input type="text" class="form-input" id="vpnHostInput" placeholder="e.g. se.socks.nordhold.net, proxy-nl.privateinternetaccess.com, or IP">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Proxy Port <span style="color:var(--danger)">*</span></label>
@@ -1559,13 +1577,13 @@
 
             <div class="form-grid" style="margin-bottom:1.25rem;">
                 <div class="form-group">
-                    <label class="form-label">NordVPN / Proxy Service Username</label>
-                    <input type="text" class="form-input" id="vpnUserInput" placeholder="NordVPN Service Username">
+                    <label class="form-label" id="vpnUserLabel">Service Username</label>
+                    <input type="text" class="form-input" id="vpnUserInput" placeholder="NordVPN / PIA / Proxy Service Username">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">NordVPN / Proxy Service Password</label>
+                    <label class="form-label" id="vpnPassLabel">Service Password</label>
                     <div style="display:flex; gap:0.5rem;">
-                        <input type="password" class="form-input" id="vpnPassInput" placeholder="NordVPN Service Password">
+                        <input type="password" class="form-input" id="vpnPassInput" placeholder="NordVPN / PIA / Proxy Service Password">
                         <button type="button" class="btn btn-secondary" onclick="toggleVpnPassVisibility()" title="Show/Hide Password" style="padding:0 0.85rem;">👁️</button>
                     </div>
                 </div>
@@ -1574,22 +1592,48 @@
             <div class="form-group" style="margin-bottom:0;">
                 <label class="form-label">Custom Proxy URL (Optional override)</label>
                 <input type="text" class="form-input" id="vpnCustomUrlInput" placeholder="socks5://username:password@server.host:1080">
-                <span class="form-hint">Leave blank to use host, port, and credentials above.</span>
+                <span class="form-hint">Leave blank to use host, port, and credentials above. Accepts standard SOCKS5 or HTTP URLs.</span>
             </div>
         </div>
 
-        <!-- Help Card -->
-        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-top: 1.5rem;">
-            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
-                💡 How to get your NordVPN SOCKS5 Service Credentials
-            </h4>
-            <div style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.5;">
-                NordVPN SOCKS5 requires <strong>Service Credentials</strong> (not your login email). To find them:
-                <ol style="margin: 0.5rem 0 0 1.25rem; padding: 0;">
-                    <li>Log into your <a href="https://my.nordaccount.com/" target="_blank" style="color:var(--primary); text-decoration:underline;">Nord Account Dashboard</a>.</li>
-                    <li>Go to <strong>Services</strong> → <strong>NordVPN</strong> → <strong>Manual Setup</strong> (or <strong>Service Credentials</strong>).</li>
-                    <li>Copy your generated Username and Password, paste them above, and click <strong>💾 Save &amp; Apply Proxy</strong>.</li>
-                </ol>
+        <!-- Help Card with Multi-VPN Selector -->
+        <div style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.25rem; margin-top: 1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem;">
+                <h4 style="margin: 0; font-size: 0.95rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
+                    💡 VPN &amp; SOCKS5 Setup Guide by Provider
+                </h4>
+                <div style="font-size:0.75rem; color:var(--text-muted);">
+                    NordVPN is recommended, but all standard SOCKS5 &amp; HTTP proxies are fully supported.
+                </div>
+            </div>
+
+            <!-- Provider Pill Tabs -->
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.85rem;" id="vpnHelpTabs">
+                <button type="button" class="btn btn-secondary" id="vtab-nord" onclick="switchVpnHelp('nord')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    ⭐ NordVPN (Recommended)
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-pia" onclick="switchVpnHelp('pia')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    Private Internet Access (PIA)
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-torguard" onclick="switchVpnHelp('torguard')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    TorGuard
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-ipvanish" onclick="switchVpnHelp('ipvanish')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    IPVanish
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-windscribe" onclick="switchVpnHelp('windscribe')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    Windscribe
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-gluetun" onclick="switchVpnHelp('gluetun')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    Mullvad / Proton (WireGuard Sidecar)
+                </button>
+                <button type="button" class="btn btn-secondary" id="vtab-custom" onclick="switchVpnHelp('custom')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
+                    Self-Hosted / Other
+                </button>
+            </div>
+
+            <!-- Provider Content Panel -->
+            <div id="vpnHelpContent" style="font-size:0.85rem; color:#cbd5e1; line-height:1.5; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:1rem;">
             </div>
         </div>
     </div>
@@ -2815,16 +2859,151 @@
         } catch (e) {
             console.error('Error loading VPN proxy:', e);
         }
+        if (!document.getElementById('vpnHelpContent').innerHTML.trim()) {
+            switchVpnHelp('nord');
+        }
     }
 
-    function applyNordPreset() {
-        const sel = document.getElementById('nordPresetSelect').value;
+    const vpnHelpDocs = {
+        nord: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">⭐ NordVPN (Recommended Choice - Fast &amp; Reliable)</div>
+            NordVPN provides fast, high-bandwidth SOCKS5 servers specifically optimized for streaming media without installing anything on your VPS.
+            <ol style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Log in to your <a href="https://my.nordaccount.com/" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">Nord Account Dashboard</a>.</li>
+                <li>Go to <strong>Services</strong> → <strong>NordVPN</strong> → <strong>Manual Setup</strong> (or <strong>Service Credentials</strong>).</li>
+                <li>Copy your generated <strong>Username</strong> and <strong>Password</strong> (these are unique service credentials, <em>not</em> your login email).</li>
+                <li>Select preset <strong>Sweden (se.socks.nordhold.net:1080) [Top Choice]</strong>, paste credentials, and click <strong>💾 Save &amp; Apply Proxy</strong>.</li>
+            </ol>
+        `,
+        pia: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">Private Internet Access (PIA) SOCKS5</div>
+            PIA provides a dedicated SOCKS5 proxy in the Netherlands with unlimited bandwidth and high concurrency.
+            <ol style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Log in to your <a href="https://www.privateinternetaccess.com/pages/client-sign-in" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">PIA Client Control Panel</a>.</li>
+                <li>Scroll down to the <strong>Generate PPTP/L2TP/SOCKS Username and Password</strong> section.</li>
+                <li>Click <strong>Generate</strong>. Note down your SOCKS username (starts with <code>x</code>) and password.</li>
+                <li>Select preset <strong>Private Internet Access (PIA) - Netherlands</strong> (<code>proxy-nl.privateinternetaccess.com:1080</code>), enter your generated credentials, and save.</li>
+            </ol>
+        `,
+        torguard: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">TorGuard Proxy Service</div>
+            TorGuard provides specialized streaming SOCKS5 proxies and dedicated IP options.
+            <ol style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Log in to your <a href="https://torguard.net/clientarea.php" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">TorGuard Client Area</a>.</li>
+                <li>Go to <strong>My Services</strong> → select your proxy/VPN package → <strong>Manage Credentials</strong>.</li>
+                <li>Set or copy your <strong>Proxy Username &amp; Password</strong>.</li>
+                <li>Select preset <strong>TorGuard - SOCKS5</strong> (<code>proxy.torguard.org:1080</code>), enter your credentials, and click <strong>💾 Save &amp; Apply Proxy</strong>.</li>
+            </ol>
+        `,
+        ipvanish: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">IPVanish SOCKS5 Proxy</div>
+            IPVanish includes SOCKS5 proxy access with every active VPN subscription.
+            <ol style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Log into your <a href="https://account.ipvanish.com/" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">IPVanish Account Dashboard</a>.</li>
+                <li>Select preset <strong>IPVanish - SOCKS5</strong> (<code>socks.ipvanish.com:1080</code>).</li>
+                <li>Enter your standard IPVanish account username and password.</li>
+                <li>Click <strong>🧪 Test Proxy &amp; Check IP</strong> to confirm connection, then save.</li>
+            </ol>
+        `,
+        windscribe: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">Windscribe SOCKS5 Proxy</div>
+            Windscribe Pro accounts include SOCKS5 proxy access across global locations.
+            <ol style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Log in to your <a href="https://windscribe.com/myaccount" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">Windscribe Account</a>.</li>
+                <li>Navigate to <strong>Account Settings</strong> → <strong>SOCKS5 Credentials</strong> to view your unique username and password.</li>
+                <li>Select preset <strong>Windscribe - SOCKS5</strong> (<code>socks5.windscribe.com:1080</code>), enter credentials, and save.</li>
+            </ol>
+        `,
+        gluetun: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">Mullvad / ProtonVPN / Surfshark via Gluetun Sidecar</div>
+            If your VPN provider only offers WireGuard or OpenVPN profiles (like Mullvad, ProtonVPN, or ExpressVPN), you can run <a href="https://github.com/qdm12/gluetun" target="_blank" rel="noopener" style="color:var(--primary); text-decoration:underline; font-weight:600;">Gluetun</a> as a Docker sidecar to turn ANY VPN into a local SOCKS5 proxy!
+            <div style="margin:0.6rem 0; background:#070a13; border:1px solid var(--border); border-radius:6px; padding:0.65rem; font-family:monospace; font-size:0.78rem; color:#38bdf8; line-height:1.5;">
+services:<br>
+&nbsp;&nbsp;gluetun:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;image: qmcgaw/gluetun<br>
+&nbsp;&nbsp;&nbsp;&nbsp;cap_add: [NET_ADMIN]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;environment:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- VPN_SERVICE_PROVIDER=mullvad # or protonvpn, surfshark, custom<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- VPN_TYPE=wireguard<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- WIREGUARD_PRIVATE_KEY=your_key<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- WIREGUARD_ADDRESSES=10.64.0.1/32
+            </div>
+            Then select preset <strong>Gluetun Sidecar (gluetun:1080)</strong> — <strong>no username/password needed</strong>.
+        `,
+        custom: `
+            <div style="font-weight:700; color:#818cf8; margin-bottom:0.35rem; font-size:0.95rem;">Self-Hosted or Custom Proxies</div>
+            You can use ANY standard SOCKS5 or HTTP/HTTPS proxy (e.g. Dante, Squid, Shadowsocks, Xray, or a remote VPS proxy).
+            <ul style="margin:0.5rem 0 0 1.25rem; padding:0; line-height:1.6;">
+                <li>Enter the proxy's IP address or hostname in <strong>Proxy Server Host</strong>.</li>
+                <li>Enter the port (e.g. <code>1080</code> for SOCKS5 or <code>3128</code> / <code>8080</code> for Squid/HTTP).</li>
+                <li>Enter credentials if authentication is required, or leave blank if IP-whitelisted.</li>
+                <li>Or paste a complete connection string into <strong>Custom Proxy URL</strong> (e.g. <code>socks5://user:pass@1.2.3.4:1080</code>).</li>
+            </ul>
+        `
+    };
+
+    function switchVpnHelp(provider) {
+        const container = document.getElementById('vpnHelpContent');
+        if (!container) return;
+        container.innerHTML = vpnHelpDocs[provider] || vpnHelpDocs.nord;
+
+        document.querySelectorAll('#vpnHelpTabs button').forEach(btn => {
+            btn.style.background = 'var(--bg-card-subtle)';
+            btn.style.color = 'var(--text-muted)';
+            btn.style.borderColor = 'var(--border)';
+        });
+        const activeBtn = document.getElementById(`vtab-${provider}`);
+        if (activeBtn) {
+            activeBtn.style.background = 'rgba(99,102,241,0.2)';
+            activeBtn.style.color = '#a5b4fc';
+            activeBtn.style.borderColor = 'rgba(99,102,241,0.5)';
+        }
+    }
+
+    function applyVpnPreset() {
+        const selElem = document.getElementById('vpnPresetSelect') || document.getElementById('nordPresetSelect');
+        if (!selElem) return;
+        const sel = selElem.value;
         if (!sel) return;
+
         const [host, port] = sel.split(':');
         document.getElementById('vpnHostInput').value = host;
         document.getElementById('vpnPortInput').value = port || 1080;
         document.getElementById('vpnTypeInput').value = 'socks5';
         document.getElementById('vpnEnabledCb').checked = true;
+
+        const userInp = document.getElementById('vpnUserInput');
+        const passInp = document.getElementById('vpnPassInput');
+
+        if (sel.includes('gluetun') || sel.includes('127.0.0.1')) {
+            userInp.placeholder = 'Not required for local sidecar';
+            passInp.placeholder = 'Not required for local sidecar';
+            switchVpnHelp('gluetun');
+        } else if (sel.includes('nordhold')) {
+            userInp.placeholder = 'NordVPN Service Username (not email)';
+            passInp.placeholder = 'NordVPN Service Password';
+            switchVpnHelp('nord');
+        } else if (sel.includes('privateinternetaccess')) {
+            userInp.placeholder = 'PIA SOCKS5 Username (starts with x)';
+            passInp.placeholder = 'PIA SOCKS5 Password';
+            switchVpnHelp('pia');
+        } else if (sel.includes('torguard')) {
+            userInp.placeholder = 'TorGuard Proxy Username';
+            passInp.placeholder = 'TorGuard Proxy Password';
+            switchVpnHelp('torguard');
+        } else if (sel.includes('ipvanish')) {
+            userInp.placeholder = 'IPVanish Account Username';
+            passInp.placeholder = 'IPVanish Account Password';
+            switchVpnHelp('ipvanish');
+        } else if (sel.includes('windscribe')) {
+            userInp.placeholder = 'Windscribe SOCKS5 Username';
+            passInp.placeholder = 'Windscribe SOCKS5 Password';
+            switchVpnHelp('windscribe');
+        }
+    }
+
+    function applyNordPreset() {
+        applyVpnPreset();
     }
 
     function toggleVpnPassVisibility() {

@@ -53,6 +53,16 @@ func invalidateClientForProvider(prov config.ProviderItem) {
 	provClientCacheLock.Unlock()
 }
 
+func clearAllClientCaches() {
+	provClientCacheLock.RLock()
+	defer provClientCacheLock.RUnlock()
+	for _, cli := range provClientCache {
+		if cli != nil {
+			cli.ClearCategoryCache()
+		}
+	}
+}
+
 func getClientForProvider(prov config.ProviderItem) (*xtreamapi.Client, error) {
 	cacheKey := prov.XtreamUser + ":" + prov.XtreamPassword + "@" + prov.XtreamBaseURL
 	provClientCacheLock.RLock()

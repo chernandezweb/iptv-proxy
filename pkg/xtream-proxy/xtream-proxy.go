@@ -59,6 +59,11 @@ type seriesCatCacheEntry struct {
 	expiresAt  time.Time
 }
 
+type catCacheEntry struct {
+	categories []xtream.Category
+	expiresAt  time.Time
+}
+
 // Client represent an xtream client
 type Client struct {
 	*xtream.XtreamClient
@@ -66,6 +71,89 @@ type Client struct {
 	seriesCache      seriesCacheEntry
 	seriesCatCacheMu sync.RWMutex
 	seriesCatCache   seriesCatCacheEntry
+	vodCatCacheMu    sync.RWMutex
+	vodCatCache      catCacheEntry
+	liveCatCacheMu   sync.RWMutex
+	liveCatCache     catCacheEntry
+}
+
+// ClearCategoryCache flushes cached categories and series
+func (c *Client) ClearCategoryCache() {
+	c.liveCatCacheMu.Lock()
+	c.liveCatCache = catCacheEntry{}
+	c.liveCatCacheMu.Unlock()
+
+	c.vodCatCacheMu.Lock()
+	c.vodCatCache = catCacheEntry{}
+	c.vodCatCacheMu.Unlock()
+
+	c.seriesCatCacheMu.Lock()
+	c.seriesCatCache = seriesCatCacheEntry{}
+	c.seriesCatCacheMu.Unlock()
+
+	c.seriesCacheMu.Lock()
+	c.seriesCache = seriesCacheEntry{}
+	c.seriesCacheMu.Unlock()
+}
+
+func (c *Client) getCachedLiveCategories() ([]xtream.Category, error) {
+	c.liveCatCacheMu.RLock()
+	if len(c.liveCatCache.categories) > 0 && time.Now().Before(c.liveCatCache.expiresAt) {
+		cats := c.liveCatCache.categories
+		c.liveCatCacheMu.RUnlock()
+		return cats, nil
+	}
+	c.liveCatCacheMu.RUnlock()
+
+	var cats []xtream.Category
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		cats, err = c.GetLiveCategories()
+		if err == nil && len(cats) > 0 {
+			break
+		}
+		time.Sleep(time.Duration(attempt*200) * time.Millisecond)
+	}
+
+	if err == nil && len(cats) > 0 {
+		c.liveCatCacheMu.Lock()
+		c.liveCatCache = catCacheEntry{
+			categories: cats,
+			expiresAt:  time.Now().Add(15 * time.Minute),
+		}
+		c.liveCatCacheMu.Unlock()
+	}
+	return cats, err
+}
+
+func (c *Client) getCachedVodCategories() ([]xtream.Category, error) {
+	c.vodCatCacheMu.RLock()
+	if len(c.vodCatCache.categories) > 0 && time.Now().Before(c.vodCatCache.expiresAt) {
+		cats := c.vodCatCache.categories
+		c.vodCatCacheMu.RUnlock()
+		return cats, nil
+	}
+	c.vodCatCacheMu.RUnlock()
+
+	var cats []xtream.Category
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		cats, err = c.GetVideoOnDemandCategories()
+		if err == nil && len(cats) > 0 {
+			break
+		}
+		time.Sleep(time.Duration(attempt*200) * time.Millisecond)
+	}
+
+	if err == nil && len(cats) > 0 {
+		c.vodCatCacheMu.Lock()
+		c.vodCatCache = catCacheEntry{
+			categories: cats,
+			expiresAt:  time.Now().Add(15 * time.Minute),
+		}
+		c.vodCatCacheMu.Unlock()
+	}
+	return cats, err
 }
 
 // New new xtream client
@@ -136,7 +224,7 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 
 	switch action {
 	case getLiveCategories:
-		cats, err2 := c.GetLiveCategories()
+		cats, err2 := c.getCachedLiveCategories()
 		if err2 == nil {
 			var filtered []xtream.Category
 			for _, cat := range cats {
@@ -152,9 +240,45 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if len(q["category_id"]) > 0 {
 			categoryID = q["category_id"][0]
 		}
-		respBody, err = c.GetLiveStreams(categoryID)
+
+		cats, _ := c.getCachedLiveCategories()
+		allowedCatIDs := make(map[int64]bool)
+		hasFilter := false
+		if len(cats) > 0 {
+			for _, cat := range cats {
+				if config.Filters.IsAllowed("live", cat.Name) {
+					allowedCatIDs[int64(cat.ID)] = true
+				} else {
+					hasFilter = true
+				}
+			}
+		}
+
+		if categoryID != "" && hasFilter {
+			catInt, convErr := strconv.ParseInt(categoryID, 10, 64)
+			if convErr == nil && !allowedCatIDs[catInt] {
+				respBody = []xtream.Stream{}
+				break
+			}
+		}
+
+		streams, err2 := c.GetLiveStreams(categoryID)
+		if err2 == nil {
+			if hasFilter && categoryID == "" {
+				filtered := make([]xtream.Stream, 0, len(streams))
+				for _, stream := range streams {
+					if allowedCatIDs[int64(stream.CategoryID)] {
+						filtered = append(filtered, stream)
+					}
+				}
+				respBody = filtered
+			} else {
+				respBody = streams
+			}
+		}
+		err = err2
 	case getVodCategories:
-		cats, err2 := c.GetVideoOnDemandCategories()
+		cats, err2 := c.getCachedVodCategories()
 		if err2 == nil {
 			var filtered []xtream.Category
 			for _, cat := range cats {
@@ -170,7 +294,43 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 		if len(q["category_id"]) > 0 {
 			categoryID = q["category_id"][0]
 		}
-		respBody, err = c.GetVideoOnDemandStreams(categoryID)
+
+		cats, _ := c.getCachedVodCategories()
+		allowedCatIDs := make(map[int64]bool)
+		hasFilter := false
+		if len(cats) > 0 {
+			for _, cat := range cats {
+				if config.Filters.IsAllowed("vod", cat.Name) {
+					allowedCatIDs[int64(cat.ID)] = true
+				} else {
+					hasFilter = true
+				}
+			}
+		}
+
+		if categoryID != "" && hasFilter {
+			catInt, convErr := strconv.ParseInt(categoryID, 10, 64)
+			if convErr == nil && !allowedCatIDs[catInt] {
+				respBody = []xtream.Stream{}
+				break
+			}
+		}
+
+		streams, err2 := c.GetVideoOnDemandStreams(categoryID)
+		if err2 == nil {
+			if hasFilter && categoryID == "" {
+				filtered := make([]xtream.Stream, 0, len(streams))
+				for _, stream := range streams {
+					if allowedCatIDs[int64(stream.CategoryID)] {
+						filtered = append(filtered, stream)
+					}
+				}
+				respBody = filtered
+			} else {
+				respBody = streams
+			}
+		}
+		err = err2
 	case getVodInfo:
 		httpcode, err = validateParams(q, "vod_id")
 		if err != nil {
@@ -415,8 +575,29 @@ func (c *Client) Action(config *config.ProxyConfig, action string, q url.Values)
 			}
 			respBody = allSeries
 		} else {
-			// Category specified, try to get series for that specific category with retry
+			// Category specified, verify if allowed before fetching
 			log.Printf("[xtream-proxy] Getting series for specific category: %s", categoryID)
+			cats, _ := c.GetSeriesCategories()
+			if len(cats) > 0 {
+				catInt, convErr := strconv.Atoi(categoryID)
+				if convErr == nil {
+					isAllowed := true
+					hasFilter := false
+					for _, cat := range cats {
+						if !config.Filters.IsAllowed("series", cat.Name) {
+							hasFilter = true
+						}
+						if int(cat.ID) == catInt {
+							isAllowed = config.Filters.IsAllowed("series", cat.Name)
+						}
+					}
+					if hasFilter && !isAllowed {
+						respBody = []xtream.SeriesInfo{}
+						break
+					}
+				}
+			}
+
 			var specificSeries []xtream.SeriesInfo
 			var specificErr error
 			for attempt := 1; attempt <= 3; attempt++ {

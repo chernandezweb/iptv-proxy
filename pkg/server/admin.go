@@ -343,6 +343,18 @@ func (c *Config) adminSaveFilters(ctx *gin.Context) {
 		return
 	}
 
+	// Invalidate category caches and metadata caches so new filters apply immediately
+	clearAllClientCaches()
+	if c.metadataCache != nil {
+		c.metadataCache.Clear()
+	}
+	if c.xmltvCache != nil {
+		c.xmltvCache.Clear()
+	}
+	xtreamM3uCacheLock.Lock()
+	xtreamM3uCache = make(map[string]cacheMeta)
+	xtreamM3uCacheLock.Unlock()
+
 	ctx.JSON(http.StatusOK, gin.H{"status": "success"})
 }
 

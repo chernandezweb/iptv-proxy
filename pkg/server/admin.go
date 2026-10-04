@@ -1154,6 +1154,10 @@ func (c *Config) adminDeployGluetun(ctx *gin.Context) {
 		"SHADOWSOCKS=off",
 		"UPDATER_PERIOD=0",
 	}
+	if strings.ToLower(req.Provider) == "nordvpn" {
+		// Strictly use high-speed Standard & P2P datacenter servers; exclude slow Tor/Onion servers
+		envs = append(envs, "SERVER_CATEGORIES=Standard VPN servers,P2P")
+	}
 	if req.Username != "" {
 		envs = append(envs, "OPENVPN_USER="+strings.TrimSpace(req.Username))
 	}

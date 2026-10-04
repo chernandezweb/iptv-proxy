@@ -1254,7 +1254,7 @@ func (c *Config) adminStopGluetun(ctx *gin.Context) {
 
 	candidates := []string{"iptv-proxy-gluetun", "gluetun"}
 	for _, name := range candidates {
-		delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/containers/%s?force=true", apiBase), nil)
+		delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/containers/%s?force=true", apiBase, name), nil)
 		if delResp, err := client.Do(delReq); err == nil {
 			delResp.Body.Close()
 		}

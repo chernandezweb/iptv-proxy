@@ -11,6 +11,7 @@ import (
 	"html"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -108,6 +109,10 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
+	admin.GET("/api/gluetun/status", c.adminGetGluetunStatus)
+	admin.POST("/api/gluetun/deploy", c.adminDeployGluetun)
+	admin.POST("/api/gluetun/stop", c.adminStopGluetun)
+	admin.GET("/api/gluetun/logs", c.adminGetGluetunLogs)
 	admin.GET("/api/version", c.adminGetVersion)
 	admin.POST("/api/update", c.adminTriggerUpdate)
 	admin.GET("/api/update/logs", c.adminGetUpdateLogs)
@@ -982,6 +987,337 @@ func (c *Config) adminTestVpnProxy(ctx *gin.Context) {
 	})
 }
 
+type GluetunDeployReq struct {
+	Provider            string `json:"provider"`
+	VpnType             string `json:"vpn_type"`
+	Username            string `json:"username"`
+	Password            string `json:"password"`
+	Country             string `json:"country"`
+	City                string `json:"city"`
+	WireguardPrivateKey string `json:"wireguard_private_key"`
+	WireguardAddresses  string `json:"wireguard_addresses"`
+}
+
+func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
+	client, apiBase, err := getDockerClient()
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{
+			"supported": false,
+			"installed": false,
+			"running":   false,
+			"error":     err.Error(),
+		})
+		return
+	}
+
+	candidates := []string{"iptv-proxy-gluetun", "gluetun"}
+	var containerInfo struct {
+		ID    string `json:"Id"`
+		Name  string `json:"Name"`
+		State struct {
+			Status    string `json:"Status"`
+			Running   bool   `json:"Running"`
+			StartedAt string `json:"StartedAt"`
+			Error     string `json:"Error"`
+		} `json:"State"`
+		Config struct {
+			Env []string `json:"Env"`
+		} `json:"Config"`
+		NetworkSettings struct {
+			Networks map[string]struct {
+				IPAddress string `json:"IPAddress"`
+			} `json:"Networks"`
+		} `json:"NetworkSettings"`
+	}
+
+	found := false
+	targetName := ""
+	for _, name := range candidates {
+		resp, err := client.Get(fmt.Sprintf("%s/containers/%s/json", apiBase, name))
+		if err == nil && resp.StatusCode == http.StatusOK {
+			if json.NewDecoder(resp.Body).Decode(&containerInfo) == nil && containerInfo.ID != "" {
+				resp.Body.Close()
+				found = true
+				targetName = name
+				break
+			}
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+
+	if !found {
+		ctx.JSON(http.StatusOK, gin.H{
+			"supported": true,
+			"installed": false,
+			"running":   false,
+			"status":    "not_installed",
+		})
+		return
+	}
+
+	provider := ""
+	country := ""
+	vpnType := ""
+	user := ""
+	for _, e := range containerInfo.Config.Env {
+		if strings.HasPrefix(e, "VPN_SERVICE_PROVIDER=") {
+			provider = strings.TrimPrefix(e, "VPN_SERVICE_PROVIDER=")
+		} else if strings.HasPrefix(e, "SERVER_COUNTRIES=") {
+			country = strings.TrimPrefix(e, "SERVER_COUNTRIES=")
+		} else if strings.HasPrefix(e, "VPN_TYPE=") {
+			vpnType = strings.TrimPrefix(e, "VPN_TYPE=")
+		} else if strings.HasPrefix(e, "OPENVPN_USER=") {
+			user = strings.TrimPrefix(e, "OPENVPN_USER=")
+		}
+	}
+
+	ipAddr := ""
+	for _, netInfo := range containerInfo.NetworkSettings.Networks {
+		if netInfo.IPAddress != "" {
+			ipAddr = netInfo.IPAddress
+			break
+		}
+	}
+
+	activeProxy := c.ProxyConfig.Provider.GetSocksProxy()
+	routingThroughGluetun := activeProxy.Enabled && (strings.Contains(strings.ToLower(activeProxy.Host), "gluetun") || activeProxy.Port == 8888)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"supported":               true,
+		"installed":               true,
+		"name":                    targetName,
+		"id":                      containerInfo.ID,
+		"running":                 containerInfo.State.Running,
+		"status":                  containerInfo.State.Status,
+		"started_at":              containerInfo.State.StartedAt,
+		"error":                   containerInfo.State.Error,
+		"provider":                provider,
+		"country":                 country,
+		"vpn_type":                vpnType,
+		"username":                user,
+		"container_ip":            ipAddr,
+		"routing_through_gluetun": routingThroughGluetun,
+	})
+}
+
+func (c *Config) adminDeployGluetun(ctx *gin.Context) {
+	var req GluetunDeployReq
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if req.Provider == "" {
+		req.Provider = "nordvpn"
+	}
+	if req.VpnType == "" {
+		req.VpnType = "openvpn"
+	}
+	if req.Country == "" {
+		req.Country = "Sweden"
+	}
+	if strings.ToLower(req.VpnType) == "openvpn" && (strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "") {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Username and password are required for OpenVPN"})
+		return
+	}
+
+	client, apiBase, err := getDockerClient()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	netName := getMyDockerNetwork(client, apiBase)
+
+	// 1. Pull qmcgaw/gluetun:latest image
+	pullURL := fmt.Sprintf("%s/images/create?fromImage=%s&tag=%s", apiBase, url.QueryEscape("qmcgaw/gluetun"), "latest")
+	if pullResp, pErr := client.Post(pullURL, "application/json", nil); pErr == nil {
+		io.Copy(ioutil.Discard, pullResp.Body)
+		pullResp.Body.Close()
+	}
+
+	// 2. Stop & Remove any existing gluetun container
+	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/containers/iptv-proxy-gluetun?force=true", apiBase), nil)
+	if delResp, err := client.Do(delReq); err == nil {
+		delResp.Body.Close()
+	}
+
+	// 3. Build environment variables
+	envs := []string{
+		"VPN_SERVICE_PROVIDER=" + strings.ToLower(req.Provider),
+		"VPN_TYPE=" + strings.ToLower(req.VpnType),
+		"SERVER_COUNTRIES=" + req.Country,
+		"HTTPPROXY=on",
+		"HTTPPROXY_PORT=8888",
+		"SHADOWSOCKS=off",
+		"UPDATER_PERIOD=0",
+	}
+	if req.Username != "" {
+		envs = append(envs, "OPENVPN_USER="+strings.TrimSpace(req.Username))
+	}
+	if req.Password != "" {
+		envs = append(envs, "OPENVPN_PASSWORD="+strings.TrimSpace(req.Password))
+	}
+	if req.City != "" {
+		envs = append(envs, "SERVER_CITIES="+strings.TrimSpace(req.City))
+	}
+	if req.WireguardPrivateKey != "" {
+		envs = append(envs, "WIREGUARD_PRIVATE_KEY="+strings.TrimSpace(req.WireguardPrivateKey))
+	}
+	if req.WireguardAddresses != "" {
+		envs = append(envs, "WIREGUARD_ADDRESSES="+strings.TrimSpace(req.WireguardAddresses))
+	}
+
+	// 4. Create container
+	hostConfig := map[string]interface{}{
+		"CapAdd": []string{"NET_ADMIN"},
+		"RestartPolicy": map[string]interface{}{
+			"Name": "unless-stopped",
+		},
+		"NetworkMode": netName,
+	}
+
+	createReq := map[string]interface{}{
+		"Image":      "qmcgaw/gluetun:latest",
+		"Env":        envs,
+		"HostConfig": hostConfig,
+		"NetworkingConfig": map[string]interface{}{
+			"EndpointsConfig": map[string]interface{}{
+				netName: map[string]interface{}{
+					"Aliases": []string{"gluetun", "iptv-proxy-gluetun"},
+				},
+			},
+		},
+	}
+
+	bodyBytes, _ := json.Marshal(createReq)
+	resp, err := client.Post(fmt.Sprintf("%s/containers/create?name=iptv-proxy-gluetun", apiBase), "application/json", bytes.NewReader(bodyBytes))
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed contacting Docker: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Docker returned HTTP %d: %s", resp.StatusCode, string(respBody))})
+		return
+	}
+
+	var createResp struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&createResp); err != nil || createResp.ID == "" {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed parsing container ID from Docker response"})
+		return
+	}
+
+	// 5. Start container
+	startResp, err := client.Post(fmt.Sprintf("%s/containers/%s/start", apiBase, createResp.ID), "application/json", nil)
+	if err != nil || (startResp.StatusCode != http.StatusOK && startResp.StatusCode != http.StatusNoContent) {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Created Gluetun container but failed to start it"})
+		return
+	}
+	defer startResp.Body.Close()
+
+	// 6. Automatically point iptv-proxy to Gluetun HTTP proxy
+	proxySettings := config.UpstreamProxySettings{
+		Enabled:  true,
+		Type:     "http",
+		Host:     "iptv-proxy-gluetun",
+		Port:     8888,
+		Username: "",
+		Password: "",
+	}
+	if err := c.ProxyConfig.Provider.SetSocksProxy(proxySettings); err != nil {
+		log.Printf("[iptv-proxy] Warning: failed saving proxy settings to provider.json: %v", err)
+	}
+	c.ApplyProxySettings(proxySettings)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"success":  true,
+		"id":       createResp.ID,
+		"name":     "iptv-proxy-gluetun",
+		"message":  "Gluetun deployed and started successfully! All streams are now securely routed through Gluetun.",
+		"settings": proxySettings,
+	})
+}
+
+func (c *Config) adminStopGluetun(ctx *gin.Context) {
+	client, apiBase, err := getDockerClient()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	candidates := []string{"iptv-proxy-gluetun", "gluetun"}
+	for _, name := range candidates {
+		delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/containers/%s?force=true", apiBase), nil)
+		if delResp, err := client.Do(delReq); err == nil {
+			delResp.Body.Close()
+		}
+	}
+
+	// Disable proxy in iptv-proxy
+	proxySettings := c.ProxyConfig.Provider.GetSocksProxy()
+	proxySettings.Enabled = false
+	c.ProxyConfig.Provider.SetSocksProxy(proxySettings)
+	c.ApplyProxySettings(proxySettings)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Gluetun container stopped and removed. Upstream proxy disabled (direct connection).",
+	})
+}
+
+func (c *Config) adminGetGluetunLogs(ctx *gin.Context) {
+	client, apiBase, err := getDockerClient()
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"error": err.Error(), "lines": []string{}})
+		return
+	}
+
+	tailStr := ctx.DefaultQuery("tail", "100")
+	tail, err := strconv.Atoi(tailStr)
+	if err != nil || tail <= 0 {
+		tail = 100
+	}
+	if tail > 500 {
+		tail = 500
+	}
+
+	candidates := []string{"iptv-proxy-gluetun", "gluetun"}
+	for _, name := range candidates {
+		u := fmt.Sprintf("%s/containers/%s/logs?stdout=true&stderr=true&tail=%d&timestamps=false", apiBase, name, tail)
+		resp, err := client.Get(u)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			body, _ := ioutil.ReadAll(resp.Body)
+			resp.Body.Close()
+			parsed := parseDockerLogs(body)
+			lines := strings.Split(strings.TrimSpace(parsed), "\n")
+			ctx.JSON(http.StatusOK, gin.H{
+				"found": true,
+				"name":  name,
+				"tail":  tail,
+				"lines": lines,
+				"raw":   parsed,
+			})
+			return
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"found": false,
+		"error": "Gluetun container not found or not running",
+		"lines": []string{},
+	})
+}
+
 type CommitSummary struct {
 	SHA     string `json:"sha"`
 	Message string `json:"message"`
@@ -1233,6 +1569,50 @@ func getDockerAPIBase(client *http.Client) string {
 		}
 	}
 	return "http://localhost/v1.44"
+}
+
+func getDockerClient() (*http.Client, string, error) {
+	if !dockerSocketExists() {
+		return nil, "", fmt.Errorf("Docker socket (/var/run/docker.sock) is not mounted into container")
+	}
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, proto, addr string) (net.Conn, error) {
+			return net.Dial("unix", "/var/run/docker.sock")
+		},
+	}
+	client := &http.Client{Transport: tr, Timeout: 60 * time.Second}
+	apiBase := getDockerAPIBase(client)
+	return client, apiBase, nil
+}
+
+func getMyDockerNetwork(client *http.Client, apiBase string) string {
+	candidates := []string{"iptv-proxy"}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		candidates = append(candidates, h)
+	}
+	for _, name := range candidates {
+		resp, err := client.Get(fmt.Sprintf("%s/containers/%s/json", apiBase, name))
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var details struct {
+				NetworkSettings struct {
+					Networks map[string]interface{} `json:"Networks"`
+				} `json:"NetworkSettings"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&details) == nil {
+				resp.Body.Close()
+				for netName := range details.NetworkSettings.Networks {
+					if netName != "" && netName != "none" && netName != "host" {
+						return netName
+					}
+				}
+			} else {
+				resp.Body.Close()
+			}
+		} else if resp != nil {
+			resp.Body.Close()
+		}
+	}
+	return "bridge"
 }
 
 func (c *Config) adminTriggerUpdate(ctx *gin.Context) {

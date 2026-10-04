@@ -1512,6 +1512,144 @@
             <div id="vpnTestResultContainer" style="display:none; margin-top:1rem; padding:0.85rem 1rem; border-radius:8px; font-size:0.85rem;"></div>
         </div>
 
+        <!-- 🐳 GLUETUN 1-CLICK SIDECAR CARD -->
+        <div class="pool-card" style="margin-top:0; margin-bottom:1.5rem; border: 1px solid rgba(59, 130, 246, 0.4); background: linear-gradient(180deg, rgba(14, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.75) 100%); box-shadow: 0 8px 24px rgba(0,0,0,0.35);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; padding-bottom:1rem; border-bottom:1px solid rgba(59, 130, 246, 0.2);">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                    <div style="font-size:2.2rem; background:rgba(59, 130, 246, 0.15); width:50px; height:50px; display:flex; align-items:center; justify-content:center; border-radius:12px; border:1px solid rgba(59, 130, 246, 0.3);">🐳</div>
+                    <div>
+                        <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                            <span style="font-weight:700; font-size:1.15rem; color:#93c5fd;">Gluetun VPN Sidecar (1-Click Deployment)</span>
+                            <span class="badge" style="background:rgba(59, 130, 246, 0.2); color:#60a5fa; border:1px solid rgba(59, 130, 246, 0.4); font-size:0.75rem;">⭐ Fixes Multi-Device NordVPN Limits</span>
+                        </div>
+                        <div style="font-size:0.83rem; color:var(--text-muted); margin-top:0.2rem;">
+                            Direct NordVPN SOCKS5 has a strict 10-connection limit that causes stream rollbacks &amp; drops. Gluetun runs inside Docker, combining all streams into <strong>1 dedicated tunnel with unlimited connections</strong>.
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <div id="gluetunStatusBadge" class="status-badge" style="border-color:var(--border); color:var(--text-muted);">
+                        <span class="status-dot"></span> Checking Sidecar...
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="checkGluetunStatus(true)" style="padding:0.4rem 0.75rem; font-size:0.82rem;" title="Refresh Gluetun container status">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Gluetun Live Info Banner (when running) -->
+            <div id="gluetunRunningBanner" style="display:none; margin-top:1rem; padding:0.85rem 1rem; border-radius:8px; background:rgba(34, 197, 94, 0.08); border:1px solid rgba(34, 197, 94, 0.25);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                    <div>
+                        <div style="font-weight:700; color:#86efac; font-size:0.95rem; display:flex; align-items:center; gap:0.4rem;">
+                            <span>🟢 Gluetun Container Active &amp; Protecting Streams</span>
+                        </div>
+                        <div style="font-size:0.82rem; color:#cbd5e1; margin-top:0.25rem;" id="gluetunBannerDetails">
+                            Provider: <strong id="gluetunActiveProvider">NordVPN</strong> | Exit Country: <strong id="gluetunActiveCountry">Sweden</strong> | Routing: <span style="color:#86efac; font-weight:600;">http://iptv-proxy-gluetun:8888</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="openGluetunLogsModal()" style="font-size:0.82rem; padding:0.4rem 0.85rem;">
+                            📜 View Live Logs
+                        </button>
+                        <button type="button" class="btn btn-danger" onclick="stopGluetun()" style="font-size:0.82rem; padding:0.4rem 0.85rem;">
+                            ⏹️ Stop Gluetun
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gluetun Deploy Form -->
+            <div id="gluetunDeployForm" style="margin-top:1.25rem;">
+                <div class="form-grid" style="margin-bottom:1rem;">
+                    <div class="form-group">
+                        <label class="form-label">VPN Provider</label>
+                        <select class="form-input" id="gluetunProviderSelect" onchange="onGluetunProviderChange()">
+                            <option value="nordvpn" selected>⭐ NordVPN (Recommended)</option>
+                            <option value="surfshark">Surfshark</option>
+                            <option value="private internet access">Private Internet Access (PIA)</option>
+                            <option value="protonvpn">ProtonVPN</option>
+                            <option value="mullvad">Mullvad</option>
+                            <option value="ipvanish">IPVanish</option>
+                            <option value="custom">Custom WireGuard / OpenVPN</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">VPN Protocol</label>
+                        <select class="form-input" id="gluetunProtocolSelect" onchange="onGluetunProtocolChange()">
+                            <option value="openvpn" selected>OpenVPN (Standard Service Credentials)</option>
+                            <option value="wireguard">WireGuard (Private Key)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Exit Country</label>
+                        <select class="form-input" id="gluetunCountrySelect">
+                            <option value="Sweden" selected>Sweden (Stockholm) [Top Recommended]</option>
+                            <option value="Netherlands">Netherlands (Amsterdam)</option>
+                            <option value="United States">United States</option>
+                            <option value="Germany">Germany (Frankfurt)</option>
+                            <option value="United Kingdom">United Kingdom (London)</option>
+                            <option value="Canada">Canada</option>
+                            <option value="France">France (Paris)</option>
+                            <option value="Switzerland">Switzerland (Zurich)</option>
+                            <option value="Spain">Spain (Madrid)</option>
+                            <option value="Italy">Italy (Milan)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- OpenVPN Credentials Fields -->
+                <div id="gluetunOpenVpnCreds" class="form-grid" style="margin-bottom:1rem;">
+                    <div class="form-group">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label class="form-label" style="margin:0;">Service Username <span style="color:var(--danger)">*</span></label>
+                            <button type="button" class="btn btn-secondary" onclick="syncCredsToGluetun()" style="font-size:0.75rem; padding:0.15rem 0.5rem;" title="Copy from SOCKS5 form below">
+                                📋 Copy from below
+                            </button>
+                        </div>
+                        <input type="text" class="form-input" id="gluetunUserInput" placeholder="NordVPN Service Username (from Nord Account)" style="margin-top:0.35rem;">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Service Password <span style="color:var(--danger)">*</span></label>
+                        <div style="display:flex; gap:0.5rem; margin-top:0.35rem;">
+                            <input type="password" class="form-input" id="gluetunPassInput" placeholder="NordVPN Service Password">
+                            <button type="button" class="btn btn-secondary" onclick="toggleGluetunPassVisibility()" title="Show/Hide Password" style="padding:0 0.85rem;">👁️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WireGuard Fields (Hidden by default) -->
+                <div id="gluetunWireguardCreds" class="form-grid" style="display:none; margin-bottom:1rem;">
+                    <div class="form-group">
+                        <label class="form-label">WireGuard Private Key <span style="color:var(--danger)">*</span></label>
+                        <input type="text" class="form-input" id="gluetunWgKeyInput" placeholder="e.g. aaaaaa/bbbbbb=">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">WireGuard Addresses (Optional)</label>
+                        <input type="text" class="form-input" id="gluetunWgAddressInput" placeholder="e.g. 10.2.0.2/32">
+                    </div>
+                </div>
+
+                <!-- Deploy Action Bar -->
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; padding-top:0.5rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">
+                        ⚡ Automatically pulls <code>qmcgaw/gluetun</code>, attaches to container network, and routes all IPTV traffic.
+                    </div>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button type="button" class="btn btn-secondary" id="gluetunLogsBtn" onclick="openGluetunLogsModal()" style="display:none;">
+                            📜 View Tunnel Logs
+                        </button>
+                        <button type="button" class="btn" id="deployGluetunBtn" onclick="deployGluetun()" style="background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
+                            🚀 1-Click Deploy &amp; Connect Gluetun
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Deployment Progress / Result Box -->
+                <div id="gluetunDeployResult" style="display:none; margin-top:1rem; padding:0.85rem 1rem; border-radius:8px; font-size:0.85rem;"></div>
+            </div>
+        </div>
+
         <!-- Configuration Form Card -->
         <div class="pool-card" style="margin-top:0;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
@@ -1746,6 +1884,34 @@
                 <button type="button" class="btn" id="copyUpdateCmdBtn" onclick="copyUpdateCommand()" style="display:none;">
                     📋 Copy 1-Line Update Command
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- GLUETUN LOGS MODAL -->
+<div class="modal-overlay" id="gluetunLogsModal" style="display:none;" onclick="if(event.target===this)closeGluetunLogsModal()">
+    <div class="modal-container" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3 style="margin:0; font-size:1.15rem; display:flex; align-items:center; gap:0.5rem;">
+                🐳 Gluetun VPN Tunnel Logs
+            </h3>
+            <button type="button" class="btn btn-secondary" onclick="closeGluetunLogsModal()" style="padding:0.35rem 0.65rem;">✕</button>
+        </div>
+        <div class="modal-body" style="padding:0;">
+            <div id="gluetunLogsTerminal" style="padding:1rem; background:#060913; font-family:'Fira Code', Consolas, Monaco, monospace; font-size:0.8rem; line-height:1.55; color:#cbd5e1; max-height:450px; min-height:280px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;">
+                <div class="loading-state">
+                    <span class="spinner"></span> Fetching Gluetun container logs...
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:0.8rem; color:var(--text-muted);" id="gluetunLogsFooterText">
+                Auto-refreshes every 3 seconds while open
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="fetchGluetunLogs()">🔄 Refresh</button>
+                <button type="button" class="btn btn-secondary" onclick="closeGluetunLogsModal()">Close</button>
             </div>
         </div>
     </div>
@@ -2856,6 +3022,17 @@
                 statusBadge.innerHTML = '<span class="status-dot" style="background:var(--text-muted)"></span> Disabled (Direct)';
                 statusSub.innerText = 'Traffic connects directly without proxy';
             }
+
+            // Check Gluetun container status and auto-fill credentials if available
+            checkGluetunStatus();
+            const gluetunUserEl = document.getElementById('gluetunUserInput');
+            if (gluetunUserEl && !gluetunUserEl.value && s.username) {
+                gluetunUserEl.value = s.username;
+            }
+            const gluetunPassEl = document.getElementById('gluetunPassInput');
+            if (gluetunPassEl && !gluetunPassEl.value && s.password) {
+                gluetunPassEl.value = s.password;
+            }
         } catch (e) {
             console.error('Error loading VPN proxy:', e);
         }
@@ -3095,6 +3272,213 @@ services:<br>
         } finally {
             btn.disabled = false;
             btn.innerHTML = '🧪 Test Proxy &amp; Check IP';
+        }
+    }
+
+    let gluetunLogTimer = null;
+
+    async function checkGluetunStatus(manualRefresh = false) {
+        const badge = document.getElementById('gluetunStatusBadge');
+        const runningBanner = document.getElementById('gluetunRunningBanner');
+        const logsBtn = document.getElementById('gluetunLogsBtn');
+        const deployBtn = document.getElementById('deployGluetunBtn');
+
+        if (manualRefresh && badge) {
+            badge.innerHTML = '<span class="spinner" style="width:10px; height:10px;"></span> Checking...';
+        }
+
+        try {
+            const res = await fetch('/admin/api/gluetun/status');
+            if (!res.ok) throw new Error('Failed to query Gluetun status');
+            const data = await res.json();
+
+            if (!data.supported) {
+                if (badge) {
+                    badge.className = 'status-badge';
+                    badge.innerHTML = '<span class="status-dot" style="background:var(--text-muted)"></span> Docker Socket Not Mounted';
+                }
+                return;
+            }
+
+            if (data.installed && data.running) {
+                if (badge) {
+                    badge.className = 'status-badge online';
+                    badge.innerHTML = '<span class="status-dot"></span> Active &amp; Connected';
+                }
+                if (runningBanner) runningBanner.style.display = 'block';
+                if (logsBtn) logsBtn.style.display = 'inline-flex';
+                const provEl = document.getElementById('gluetunActiveProvider');
+                if (provEl) provEl.innerText = data.provider ? data.provider.toUpperCase() : 'VPN';
+                const cEl = document.getElementById('gluetunActiveCountry');
+                if (cEl) cEl.innerText = data.country || 'Default';
+                if (deployBtn) deployBtn.innerHTML = '🔄 Redeploy / Update Gluetun';
+            } else if (data.installed) {
+                if (badge) {
+                    badge.className = 'status-badge';
+                    badge.style.color = '#fca5a5';
+                    badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                    badge.innerHTML = '<span class="status-dot" style="background:#ef4444"></span> Stopped';
+                }
+                if (runningBanner) runningBanner.style.display = 'none';
+                if (logsBtn) logsBtn.style.display = 'inline-flex';
+                if (deployBtn) deployBtn.innerHTML = '🚀 Start / Deploy Gluetun';
+            } else {
+                if (badge) {
+                    badge.className = 'status-badge';
+                    badge.style.color = 'var(--text-muted)';
+                    badge.style.borderColor = 'var(--border)';
+                    badge.innerHTML = '<span class="status-dot" style="background:var(--text-muted)"></span> Not Deployed';
+                }
+                if (runningBanner) runningBanner.style.display = 'none';
+                if (logsBtn) logsBtn.style.display = 'none';
+                if (deployBtn) deployBtn.innerHTML = '🚀 1-Click Deploy &amp; Connect Gluetun';
+            }
+        } catch (e) {
+            console.error('Error checking Gluetun status:', e);
+        }
+    }
+
+    function syncCredsToGluetun() {
+        const socksUser = document.getElementById('vpnUserInput').value.trim();
+        const socksPass = document.getElementById('vpnPassInput').value.trim();
+        if (socksUser) document.getElementById('gluetunUserInput').value = socksUser;
+        if (socksPass) document.getElementById('gluetunPassInput').value = socksPass;
+        showToast('📋 Credentials copied to Gluetun form', 'success');
+    }
+
+    function toggleGluetunPassVisibility() {
+        const input = document.getElementById('gluetunPassInput');
+        if (input) {
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+    }
+
+    function onGluetunProtocolChange() {
+        const proto = document.getElementById('gluetunProtocolSelect').value;
+        const openvpnCreds = document.getElementById('gluetunOpenVpnCreds');
+        const wgCreds = document.getElementById('gluetunWireguardCreds');
+        if (proto === 'wireguard') {
+            openvpnCreds.style.display = 'none';
+            wgCreds.style.display = 'grid';
+        } else {
+            openvpnCreds.style.display = 'grid';
+            wgCreds.style.display = 'none';
+        }
+    }
+
+    function onGluetunProviderChange() {
+        // Can add provider specific hints if desired
+    }
+
+    async function deployGluetun() {
+        const btn = document.getElementById('deployGluetunBtn');
+        const resultBox = document.getElementById('gluetunDeployResult');
+        const provider = document.getElementById('gluetunProviderSelect').value;
+        const vpnType = document.getElementById('gluetunProtocolSelect').value;
+        const country = document.getElementById('gluetunCountrySelect').value;
+        const username = document.getElementById('gluetunUserInput').value.trim();
+        const password = document.getElementById('gluetunPassInput').value.trim();
+        const wgKey = document.getElementById('gluetunWgKeyInput').value.trim();
+        const wgAddr = document.getElementById('gluetunWgAddressInput').value.trim();
+
+        if (vpnType === 'openvpn' && (!username || !password)) {
+            alert('Please enter your VPN Service Username and Password (or click "Copy from below").');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:14px; height:14px;"></span> Pulling &amp; Deploying Gluetun...';
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(59, 130, 246, 0.1)';
+        resultBox.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+        resultBox.style.color = '#bfdbfe';
+        resultBox.innerHTML = '⏳ Contacting Docker engine, pulling <code>qmcgaw/gluetun:latest</code>, and launching VPN sidecar...';
+
+        const payload = {
+            provider,
+            vpn_type: vpnType,
+            country,
+            username,
+            password,
+            wireguard_private_key: wgKey,
+            wireguard_addresses: wgAddr
+        };
+
+        try {
+            const res = await fetch('/admin/api/gluetun/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed deploying Gluetun');
+
+            resultBox.style.background = 'rgba(34, 197, 94, 0.1)';
+            resultBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+            resultBox.style.color = '#86efac';
+            resultBox.innerHTML = `<strong>✅ Success!</strong> Gluetun sidecar is running.<br>${escapeHtml(data.message)}<br><span style="font-size:0.8rem; color:#94a3b8;">Tunnel handshake may take 5–10 seconds. Check logs or test connection below.</span>`;
+            showToast('🚀 Gluetun deployed and active!', 'success');
+
+            await checkGluetunStatus();
+            await loadVpnProxy();
+        } catch (e) {
+            resultBox.style.background = 'rgba(239, 68, 68, 0.1)';
+            resultBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            resultBox.style.color = '#fca5a5';
+            resultBox.innerHTML = `<strong>❌ Deployment Failed:</strong> ${escapeHtml(e.message)}`;
+            showToast('❌ Gluetun deployment failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '🚀 1-Click Deploy &amp; Connect Gluetun';
+        }
+    }
+
+    async function stopGluetun() {
+        if (!confirm('Are you sure you want to stop Gluetun? Outbound IPTV proxy will be disabled.')) return;
+        try {
+            const res = await fetch('/admin/api/gluetun/stop', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed stopping Gluetun');
+            showToast('⏹️ Gluetun stopped', 'success');
+            await checkGluetunStatus();
+            await loadVpnProxy();
+        } catch (e) {
+            alert('Error stopping Gluetun: ' + e.message);
+        }
+    }
+
+    function openGluetunLogsModal() {
+        const modal = document.getElementById('gluetunLogsModal');
+        modal.style.display = 'flex';
+        fetchGluetunLogs();
+        if (gluetunLogTimer) clearInterval(gluetunLogTimer);
+        gluetunLogTimer = setInterval(fetchGluetunLogs, 3000);
+    }
+
+    function closeGluetunLogsModal() {
+        const modal = document.getElementById('gluetunLogsModal');
+        modal.style.display = 'none';
+        if (gluetunLogTimer) {
+            clearInterval(gluetunLogTimer);
+            gluetunLogTimer = null;
+        }
+    }
+
+    async function fetchGluetunLogs() {
+        const term = document.getElementById('gluetunLogsTerminal');
+        if (!term) return;
+        try {
+            const res = await fetch('/admin/api/gluetun/logs?tail=150');
+            if (!res.ok) throw new Error('Failed to fetch logs');
+            const data = await res.json();
+            if (data.lines && data.lines.length > 0) {
+                term.innerText = data.lines.join('\n');
+                term.scrollTop = term.scrollHeight;
+            } else {
+                term.innerText = data.error || 'No logs received yet...';
+            }
+        } catch (e) {
+            term.innerText = 'Error loading logs: ' + e.message;
         }
     }
 

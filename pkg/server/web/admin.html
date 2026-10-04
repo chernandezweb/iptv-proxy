@@ -3261,7 +3261,31 @@ services:<br>
 
     let gluetunLogTimer = null;
 
+    function restoreCachedGluetunCreds() {
+        try {
+            const u = localStorage.getItem('iptv_gluetun_username');
+            const p = localStorage.getItem('iptv_gluetun_password');
+            const uEl = document.getElementById('gluetunUserInput');
+            const pEl = document.getElementById('gluetunPassInput');
+            if (u && uEl && !uEl.value) uEl.value = u;
+            if (p && pEl && !pEl.value) pEl.value = p;
+        } catch(e){}
+    }
+
+    // Save as the user types
+    document.addEventListener('input', (e) => {
+        if (e.target && e.target.id === 'gluetunUserInput') {
+            e.target.dataset.userEdited = "true";
+            try { localStorage.setItem('iptv_gluetun_username', e.target.value.trim()); } catch(err){}
+        }
+        if (e.target && e.target.id === 'gluetunPassInput') {
+            e.target.dataset.userEdited = "true";
+            try { localStorage.setItem('iptv_gluetun_password', e.target.value.trim()); } catch(err){}
+        }
+    });
+
     async function checkGluetunStatus(manualRefresh = false) {
+        restoreCachedGluetunCreds();
         const badge = document.getElementById('gluetunStatusBadge');
         const runningBanner = document.getElementById('gluetunRunningBanner');
         const logsBtn = document.getElementById('gluetunLogsBtn');
@@ -3275,6 +3299,37 @@ services:<br>
             const res = await fetch('/admin/api/gluetun/status');
             if (!res.ok) throw new Error('Failed to query Gluetun status');
             const data = await res.json();
+
+            // Auto-populate saved credentials and settings from server
+            if (data.username) {
+                const uEl = document.getElementById('gluetunUserInput');
+                if (uEl && (!uEl.value || !uEl.dataset.userEdited)) {
+                    uEl.value = data.username;
+                }
+                try { localStorage.setItem('iptv_gluetun_username', data.username); } catch(e){}
+            }
+            if (data.password) {
+                const pEl = document.getElementById('gluetunPassInput');
+                if (pEl && (!pEl.value || !pEl.dataset.userEdited)) {
+                    pEl.value = data.password;
+                }
+                try { localStorage.setItem('iptv_gluetun_password', data.password); } catch(e){}
+            }
+            if (data.provider) {
+                const provEl = document.getElementById('gluetunProviderSelect');
+                if (provEl) provEl.value = data.provider.toLowerCase();
+            }
+            if (data.country) {
+                const cEl = document.getElementById('gluetunCountrySelect');
+                if (cEl) cEl.value = data.country;
+            }
+            if (data.vpn_type) {
+                const protoEl = document.getElementById('gluetunProtocolSelect');
+                if (protoEl) {
+                    protoEl.value = data.vpn_type.toLowerCase();
+                    onGluetunProtocolChange();
+                }
+            }
 
             if (!data.supported) {
                 if (badge) {
@@ -3325,8 +3380,14 @@ services:<br>
     function syncCredsToGluetun() {
         const socksUser = document.getElementById('vpnUserInput').value.trim();
         const socksPass = document.getElementById('vpnPassInput').value.trim();
-        if (socksUser) document.getElementById('gluetunUserInput').value = socksUser;
-        if (socksPass) document.getElementById('gluetunPassInput').value = socksPass;
+        if (socksUser) {
+            document.getElementById('gluetunUserInput').value = socksUser;
+            try { localStorage.setItem('iptv_gluetun_username', socksUser); } catch(e){}
+        }
+        if (socksPass) {
+            document.getElementById('gluetunPassInput').value = socksPass;
+            try { localStorage.setItem('iptv_gluetun_password', socksPass); } catch(e){}
+        }
         showToast('📋 Credentials copied to Gluetun form', 'success');
     }
 
@@ -3360,14 +3421,36 @@ services:<br>
         const provider = document.getElementById('gluetunProviderSelect').value;
         const vpnType = document.getElementById('gluetunProtocolSelect').value;
         const country = document.getElementById('gluetunCountrySelect').value;
-        const username = document.getElementById('gluetunUserInput').value.trim();
-        const password = document.getElementById('gluetunPassInput').value.trim();
+        let username = document.getElementById('gluetunUserInput').value.trim();
+        let password = document.getElementById('gluetunPassInput').value.trim();
         const wgKey = document.getElementById('gluetunWgKeyInput').value.trim();
         const wgAddr = document.getElementById('gluetunWgAddressInput').value.trim();
 
-        if (vpnType === 'openvpn' && (!username || !password)) {
+        // Fallback to localStorage if empty in the input
+        if (!username) {
+            try { username = localStorage.getItem('iptv_gluetun_username') || ''; } catch(e){}
+            if (username && document.getElementById('gluetunUserInput')) {
+                document.getElementById('gluetunUserInput').value = username;
+            }
+        }
+        if (!password) {
+            try { password = localStorage.getItem('iptv_gluetun_password') || ''; } catch(e){}
+            if (password && document.getElementById('gluetunPassInput')) {
+                document.getElementById('gluetunPassInput').value = password;
+            }
+        }
+
+        const isRedeploy = btn && btn.innerHTML.includes('Redeploy');
+        if (vpnType === 'openvpn' && (!username || !password) && !isRedeploy) {
             alert('Please enter your VPN Service Username and Password (or click "Copy from below").');
             return;
+        }
+
+        if (username) {
+            try { localStorage.setItem('iptv_gluetun_username', username); } catch(e){}
+        }
+        if (password) {
+            try { localStorage.setItem('iptv_gluetun_password', password); } catch(e){}
         }
 
         btn.disabled = true;
@@ -4109,6 +4192,7 @@ services:<br>
 
     // Initialize on page load
     (async function init() {
+        restoreCachedGluetunCreds();
         await loadProviders();
         await loadCategories();
         await loadUsers();

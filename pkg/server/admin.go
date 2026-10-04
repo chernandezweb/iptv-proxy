@@ -1047,12 +1047,26 @@ func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
 		}
 	}
 
+	gluetunConfPath := filepath.Join(c.dataDir, "gluetun.json")
+	var saved GluetunDeployReq
+	hasSaved := false
+	if data, err := ioutil.ReadFile(gluetunConfPath); err == nil {
+		if json.Unmarshal(data, &saved) == nil {
+			hasSaved = true
+		}
+	}
+
 	if !found {
 		ctx.JSON(http.StatusOK, gin.H{
 			"supported": true,
 			"installed": false,
 			"running":   false,
 			"status":    "not_installed",
+			"username":  saved.Username,
+			"password":  saved.Password,
+			"provider":  saved.Provider,
+			"country":   saved.Country,
+			"vpn_type":  saved.VpnType,
 		})
 		return
 	}
@@ -1061,6 +1075,7 @@ func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
 	country := ""
 	vpnType := ""
 	user := ""
+	pass := ""
 	for _, e := range containerInfo.Config.Env {
 		if strings.HasPrefix(e, "VPN_SERVICE_PROVIDER=") {
 			provider = strings.TrimPrefix(e, "VPN_SERVICE_PROVIDER=")
@@ -1070,6 +1085,37 @@ func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
 			vpnType = strings.TrimPrefix(e, "VPN_TYPE=")
 		} else if strings.HasPrefix(e, "OPENVPN_USER=") {
 			user = strings.TrimPrefix(e, "OPENVPN_USER=")
+		} else if strings.HasPrefix(e, "OPENVPN_PASSWORD=") {
+			pass = strings.TrimPrefix(e, "OPENVPN_PASSWORD=")
+		}
+	}
+
+	if hasSaved {
+		if user == "" {
+			user = saved.Username
+		}
+		if pass == "" {
+			pass = saved.Password
+		}
+		if provider == "" {
+			provider = saved.Provider
+		}
+		if country == "" {
+			country = saved.Country
+		}
+		if vpnType == "" {
+			vpnType = saved.VpnType
+		}
+	} else if user != "" || pass != "" {
+		toSave := GluetunDeployReq{
+			Provider: provider,
+			Country:  country,
+			VpnType:  vpnType,
+			Username: user,
+			Password: pass,
+		}
+		if confData, err := json.MarshalIndent(toSave, "", "  "); err == nil {
+			_ = ioutil.WriteFile(gluetunConfPath, confData, 0600)
 		}
 	}
 
@@ -1097,6 +1143,7 @@ func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
 		"country":                 country,
 		"vpn_type":                vpnType,
 		"username":                user,
+		"password":                pass,
 		"container_ip":            ipAddr,
 		"routing_through_gluetun": routingThroughGluetun,
 	})
@@ -1107,6 +1154,25 @@ func (c *Config) adminDeployGluetun(ctx *gin.Context) {
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
 		return
+	}
+
+	gluetunConfPath := filepath.Join(c.dataDir, "gluetun.json")
+	// If credentials were left blank on redeploy, fall back to existing saved credentials
+	if strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+		if data, err := ioutil.ReadFile(gluetunConfPath); err == nil {
+			var saved GluetunDeployReq
+			if json.Unmarshal(data, &saved) == nil {
+				if strings.TrimSpace(req.Username) == "" {
+					req.Username = saved.Username
+				}
+				if strings.TrimSpace(req.Password) == "" {
+					req.Password = saved.Password
+				}
+				if strings.TrimSpace(req.WireguardPrivateKey) == "" {
+					req.WireguardPrivateKey = saved.WireguardPrivateKey
+				}
+			}
+		}
 	}
 
 	if req.Provider == "" {
@@ -1239,6 +1305,11 @@ func (c *Config) adminDeployGluetun(ctx *gin.Context) {
 		log.Printf("[iptv-proxy] Warning: failed saving proxy settings to provider.json: %v", err)
 	}
 	c.ApplyProxySettings(proxySettings)
+
+	// Persist Gluetun config in dataDir across restarts and updates
+	if confData, err := json.MarshalIndent(req, "", "  "); err == nil {
+		ioutil.WriteFile(gluetunConfPath, confData, 0600)
+	}
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"success":  true,

@@ -1650,130 +1650,104 @@
             </div>
         </div>
 
-        <!-- Configuration Form Card -->
-        <div class="pool-card" style="margin-top:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
-                <div>
-                    <label class="form-label" style="margin:0; font-size:1rem; font-weight:700; color:var(--text); display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" id="vpnEnabledCb" style="width:1.2rem; height:1.2rem; accent-color:var(--primary); cursor:pointer;">
-                        Enable Outbound VPN / SOCKS5 Proxy
-                    </label>
-                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
-                        When enabled, all HTTP queries and live TS stream requests to IPTV providers are routed through this proxy.
+        <!-- Collapsible Advanced / Manual SOCKS5 Proxy Card -->
+        <details class="pool-card" style="margin-top:0; border:1px solid rgba(255,255,255,0.08); background:rgba(15, 23, 42, 0.4); padding:0; overflow:hidden;">
+            <summary style="padding:1rem 1.25rem; font-weight:600; font-size:0.92rem; color:var(--text-muted); cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none;">
+                <span style="display:flex; align-items:center; gap:0.5rem;">
+                    <span>⚙️ Advanced / Manual Proxy Settings (Optional)</span>
+                    <span class="badge" style="font-size:0.7rem; background:rgba(255,255,255,0.05); color:var(--text-muted);">Managed by Gluetun</span>
+                </span>
+                <span style="font-size:0.75rem; color:var(--text-muted); opacity:0.7;">(Click to view manual SOCKS5 &amp; provider guides)</span>
+            </summary>
+            
+            <div style="padding:1.25rem; border-top:1px solid rgba(255,255,255,0.06);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border);">
+                    <div>
+                        <label class="form-label" style="margin:0; font-size:0.95rem; font-weight:700; color:var(--text); display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="vpnEnabledCb" style="width:1.1rem; height:1.1rem; accent-color:var(--primary); cursor:pointer;">
+                            Enable Outbound Proxy Routing
+                        </label>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.25rem;">
+                            Normally managed automatically by Gluetun sidecar. Only change this if you are using a separate standalone SOCKS5 proxy server.
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Server Quick Presets -->
-            <div class="form-group" style="margin-bottom:1.25rem;">
-                <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>VPN / SOCKS5 Server Presets</span>
-                    <span style="font-size:0.75rem; color:var(--primary); font-weight:600;">⭐ NordVPN Recommended</span>
-                </label>
-                <select class="form-input" id="vpnPresetSelect" onchange="applyVpnPreset()">
-                    <option value="">-- Choose a Server Preset (or enter custom server below) --</option>
-                    <optgroup label="⭐ NordVPN (Recommended Choice - Fast &amp; Reliable)">
-                        <option value="se.socks.nordhold.net:1080">NordVPN - Sweden (se.socks.nordhold.net:1080) [Top Choice]</option>
-                        <option value="nl.socks.nordhold.net:1080">NordVPN - Netherlands (nl.socks.nordhold.net:1080)</option>
-                        <option value="us.socks.nordhold.net:1080">NordVPN - United States (us.socks.nordhold.net:1080)</option>
-                        <option value="de.socks.nordhold.net:1080">NordVPN - Germany (de.socks.nordhold.net:1080)</option>
-                        <option value="ie.socks.nordhold.net:1080">NordVPN - Ireland (ie.socks.nordhold.net:1080)</option>
-                    </optgroup>
-                    <optgroup label="🌐 Other Supported VPNs with Native SOCKS5">
-                        <option value="proxy-nl.privateinternetaccess.com:1080">Private Internet Access (PIA) - Netherlands (proxy-nl.privateinternetaccess.com:1080)</option>
-                        <option value="socks.ipvanish.com:1080">IPVanish - SOCKS5 (socks.ipvanish.com:1080)</option>
-                        <option value="proxy.torguard.org:1080">TorGuard - SOCKS5 (proxy.torguard.org:1080)</option>
-                        <option value="socks5.windscribe.com:1080">Windscribe - SOCKS5 (socks5.windscribe.com:1080)</option>
-                    </optgroup>
-                    <optgroup label="🐳 WireGuard / OpenVPN Docker Sidecar (Gluetun)">
-                        <option value="gluetun:1080">Gluetun Sidecar (gluetun:1080 - Mullvad, Proton, Surfshark, etc.)</option>
-                        <option value="127.0.0.1:1080">Local Host SOCKS5 (127.0.0.1:1080)</option>
-                    </optgroup>
-                </select>
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
-                    Selecting a preset auto-fills the host and port. You can also manually type any custom SOCKS5 or HTTP proxy server.
-                </div>
-            </div>
-
-            <div class="form-grid" style="margin-bottom:1.25rem;">
-                <div class="form-group">
-                    <label class="form-label">Proxy Protocol</label>
-                    <select class="form-input" id="vpnTypeInput">
-                        <option value="socks5">SOCKS5 (NordVPN, PIA, TorGuard, IPVanish standard)</option>
-                        <option value="http">HTTP / HTTPS Proxy</option>
+                <!-- Server Quick Presets -->
+                <div class="form-group" style="margin-bottom:1.25rem;">
+                    <label class="form-label">VPN / SOCKS5 Server Presets</label>
+                    <select class="form-input" id="vpnPresetSelect" onchange="applyVpnPreset()">
+                        <option value="">-- Choose a Server Preset (or enter custom server below) --</option>
+                        <optgroup label="⭐ NordVPN (Direct SOCKS5 - 10 Conn Limit)">
+                            <option value="se.socks.nordhold.net:1080">NordVPN - Sweden (se.socks.nordhold.net:1080)</option>
+                            <option value="nl.socks.nordhold.net:1080">NordVPN - Netherlands (nl.socks.nordhold.net:1080)</option>
+                            <option value="us.socks.nordhold.net:1080">NordVPN - United States (us.socks.nordhold.net:1080)</option>
+                            <option value="de.socks.nordhold.net:1080">NordVPN - Germany (de.socks.nordhold.net:1080)</option>
+                            <option value="ie.socks.nordhold.net:1080">NordVPN - Ireland (ie.socks.nordhold.net:1080)</option>
+                        </optgroup>
+                        <optgroup label="🌐 Other Supported VPNs with Native SOCKS5">
+                            <option value="proxy-nl.privateinternetaccess.com:1080">Private Internet Access (PIA) - Netherlands (proxy-nl.privateinternetaccess.com:1080)</option>
+                            <option value="socks.ipvanish.com:1080">IPVanish - SOCKS5 (socks.ipvanish.com:1080)</option>
+                            <option value="proxy.torguard.org:1080">TorGuard - SOCKS5 (proxy.torguard.org:1080)</option>
+                            <option value="socks5.windscribe.com:1080">Windscribe - SOCKS5 (socks5.windscribe.com:1080)</option>
+                        </optgroup>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Proxy Server Host <span style="color:var(--danger)">*</span></label>
-                    <input type="text" class="form-input" id="vpnHostInput" placeholder="e.g. se.socks.nordhold.net, proxy-nl.privateinternetaccess.com, or IP">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Proxy Port <span style="color:var(--danger)">*</span></label>
-                    <input type="number" class="form-input" id="vpnPortInput" placeholder="1080" value="1080">
-                </div>
-            </div>
 
-            <div class="form-grid" style="margin-bottom:1.25rem;">
-                <div class="form-group">
-                    <label class="form-label" id="vpnUserLabel">Service Username</label>
-                    <input type="text" class="form-input" id="vpnUserInput" placeholder="NordVPN / PIA / Proxy Service Username">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" id="vpnPassLabel">Service Password</label>
-                    <div style="display:flex; gap:0.5rem;">
-                        <input type="password" class="form-input" id="vpnPassInput" placeholder="NordVPN / PIA / Proxy Service Password">
-                        <button type="button" class="btn btn-secondary" onclick="toggleVpnPassVisibility()" title="Show/Hide Password" style="padding:0 0.85rem;">👁️</button>
+                <div class="form-grid" style="margin-bottom:1.25rem;">
+                    <div class="form-group">
+                        <label class="form-label">Proxy Protocol</label>
+                        <select class="form-input" id="vpnTypeInput">
+                            <option value="socks5">SOCKS5</option>
+                            <option value="http">HTTP / HTTPS Proxy</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Proxy Server Host <span style="color:var(--danger)">*</span></label>
+                        <input type="text" class="form-input" id="vpnHostInput" placeholder="e.g. iptv-proxy-gluetun, se.socks.nordhold.net">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Proxy Port <span style="color:var(--danger)">*</span></label>
+                        <input type="number" class="form-input" id="vpnPortInput" placeholder="1080" value="1080">
                     </div>
                 </div>
-            </div>
 
-            <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label">Custom Proxy URL (Optional override)</label>
-                <input type="text" class="form-input" id="vpnCustomUrlInput" placeholder="socks5://username:password@server.host:1080">
-                <span class="form-hint">Leave blank to use host, port, and credentials above. Accepts standard SOCKS5 or HTTP URLs.</span>
-            </div>
-        </div>
+                <div class="form-grid" style="margin-bottom:1.25rem;">
+                    <div class="form-group">
+                        <label class="form-label" id="vpnUserLabel">Service Username</label>
+                        <input type="text" class="form-input" id="vpnUserInput" placeholder="Service Username">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" id="vpnPassLabel">Service Password</label>
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="password" class="form-input" id="vpnPassInput" placeholder="Service Password">
+                            <button type="button" class="btn btn-secondary" onclick="toggleVpnPassVisibility()" title="Show/Hide Password" style="padding:0 0.85rem;">👁️</button>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Help Card with Multi-VPN Selector -->
-        <div style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.25rem; margin-top: 1.5rem;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem;">
-                <h4 style="margin: 0; font-size: 0.95rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
-                    💡 VPN &amp; SOCKS5 Setup Guide by Provider
-                </h4>
-                <div style="font-size:0.75rem; color:var(--text-muted);">
-                    NordVPN is recommended, but all standard SOCKS5 &amp; HTTP proxies are fully supported.
+                <div class="form-group" style="margin-bottom:1.25rem;">
+                    <label class="form-label">Custom Proxy URL (Optional override)</label>
+                    <input type="text" class="form-input" id="vpnCustomUrlInput" placeholder="socks5://username:password@server.host:1080">
+                    <span class="form-hint">Leave blank to use host, port, and credentials above.</span>
+                </div>
+
+                <!-- Provider Pill Tabs Help -->
+                <div style="background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.15); border-radius: var(--radius); padding: 1rem; margin-top: 1rem;">
+                    <h5 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #a5b4fc;">
+                        💡 Manual SOCKS5 Setup Guide by Provider
+                    </h5>
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.75rem;" id="vpnHelpTabs">
+                        <button type="button" class="btn btn-secondary" id="vtab-nord" onclick="switchVpnHelp('nord')" style="font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:999px;">NordVPN</button>
+                        <button type="button" class="btn btn-secondary" id="vtab-pia" onclick="switchVpnHelp('pia')" style="font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:999px;">PIA</button>
+                        <button type="button" class="btn btn-secondary" id="vtab-torguard" onclick="switchVpnHelp('torguard')" style="font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:999px;">TorGuard</button>
+                        <button type="button" class="btn btn-secondary" id="vtab-ipvanish" onclick="switchVpnHelp('ipvanish')" style="font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:999px;">IPVanish</button>
+                        <button type="button" class="btn btn-secondary" id="vtab-windscribe" onclick="switchVpnHelp('windscribe')" style="font-size:0.75rem; padding:0.25rem 0.55rem; border-radius:999px;">Windscribe</button>
+                    </div>
+                    <div id="vpnHelpContent" style="font-size:0.82rem; color:#cbd5e1; line-height:1.5; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:0.85rem;"></div>
                 </div>
             </div>
-
-            <!-- Provider Pill Tabs -->
-            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.85rem;" id="vpnHelpTabs">
-                <button type="button" class="btn btn-secondary" id="vtab-nord" onclick="switchVpnHelp('nord')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    ⭐ NordVPN (Recommended)
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-pia" onclick="switchVpnHelp('pia')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    Private Internet Access (PIA)
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-torguard" onclick="switchVpnHelp('torguard')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    TorGuard
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-ipvanish" onclick="switchVpnHelp('ipvanish')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    IPVanish
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-windscribe" onclick="switchVpnHelp('windscribe')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    Windscribe
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-gluetun" onclick="switchVpnHelp('gluetun')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    Mullvad / Proton (WireGuard Sidecar)
-                </button>
-                <button type="button" class="btn btn-secondary" id="vtab-custom" onclick="switchVpnHelp('custom')" style="font-size:0.78rem; padding:0.3rem 0.65rem; border-radius:999px;">
-                    Self-Hosted / Other
-                </button>
-            </div>
-
-            <!-- Provider Content Panel -->
-            <div id="vpnHelpContent" style="font-size:0.85rem; color:#cbd5e1; line-height:1.5; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:1rem;">
-            </div>
-        </div>
+        </details>
     </div>
 
     <!-- LOGS TAB -->
@@ -3012,7 +2986,15 @@
                 badge.className = 'badge badge-green';
                 statusBadge.className = 'status-badge online';
                 statusBadge.innerHTML = '<span class="status-dot"></span> Active';
-                statusSub.innerText = `Routing through ${s.host || 'custom proxy'}:${s.port || 1080}`;
+                if (s.host && (s.host.includes('gluetun') || s.port === 8888)) {
+                    const titleEl = document.getElementById('vpnStatusTitle');
+                    if (titleEl) titleEl.innerText = '🛡️ VPN Protected (Gluetun Sidecar)';
+                    statusSub.innerText = 'All streams routed through Gluetun (Unlimited concurrent connections)';
+                } else {
+                    const titleEl = document.getElementById('vpnStatusTitle');
+                    if (titleEl) titleEl.innerText = 'SOCKS5 Proxy Configuration';
+                    statusSub.innerText = `Routing through ${s.host || 'custom proxy'}:${s.port || 1080}`;
+                }
             } else {
                 badge.innerText = 'OFF';
                 badge.className = 'badge';
@@ -3020,6 +3002,8 @@
                 statusBadge.style.color = 'var(--text-muted)';
                 statusBadge.style.borderColor = 'var(--border)';
                 statusBadge.innerHTML = '<span class="status-dot" style="background:var(--text-muted)"></span> Disabled (Direct)';
+                const titleEl = document.getElementById('vpnStatusTitle');
+                if (titleEl) titleEl.innerText = 'SOCKS5 Proxy Configuration';
                 statusSub.innerText = 'Traffic connects directly without proxy';
             }
 

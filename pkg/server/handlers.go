@@ -44,7 +44,31 @@ func (c *Config) getM3U(ctx *gin.Context) {
 	ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, c.M3UFileName))
 	ctx.Header("Content-Type", "application/octet-stream")
 
-	ctx.File(c.proxyfiedM3UPath)
+	authUser := c.User.String()
+	authPass := c.Password.String()
+	if val, exists := ctx.Get("auth_user"); exists {
+		if u, ok := val.(*config.UserItem); ok {
+			authUser = u.Username
+			authPass = u.Password
+		}
+	} else if u := ctx.Query("username"); u != "" {
+		authUser = u
+		authPass = ctx.Query("password")
+	}
+
+	if authUser == c.User.String() && authPass == c.Password.String() {
+		ctx.File(c.proxyfiedM3UPath)
+		return
+	}
+
+	data, err := ioutil.ReadFile(c.proxyfiedM3UPath)
+	if err != nil {
+		ctx.File(c.proxyfiedM3UPath)
+		return
+	}
+	content := string(data)
+	content = strings.ReplaceAll(content, "/"+c.User.PathEscape()+"/"+c.Password.PathEscape()+"/", "/"+url.PathEscape(authUser)+"/"+url.PathEscape(authPass)+"/")
+	ctx.Data(http.StatusOK, "application/octet-stream", []byte(content))
 }
 
 func (c *Config) reverseProxy(ctx *gin.Context) {

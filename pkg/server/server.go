@@ -290,6 +290,11 @@ func (c *Config) playlistInitialization() error {
 
 // MarshallInto a *bufio.Writer a Playlist.
 func (c *Config) marshallInto(into *os.File, xtream bool) error {
+	return c.marshallIntoForUser(into, xtream, c.User.String(), c.Password.String())
+}
+
+// MarshallIntoForUser marshalls a Playlist into a file replacing stream URLs with user-specific credentials.
+func (c *Config) marshallIntoForUser(into *os.File, xtream bool, user, password string) error {
 	filteredTrack := make([]m3u.Track, 0, len(c.playlist.Tracks))
 
 	ret := 0
@@ -307,7 +312,7 @@ func (c *Config) marshallInto(into *os.File, xtream bool) error {
 			buffer.WriteString(fmt.Sprintf("%s=%q ", track.Tags[i].Name, track.Tags[i].Value)) // nolint: errcheck
 		}
 
-		uri, err := c.replaceURL(track.URI, i-ret, xtream)
+		uri, err := c.replaceURLForUser(track.URI, i-ret, xtream, user, password)
 		if err != nil {
 			ret++
 			log.Printf("ERROR: track: %s: %s", track.Name, err)
@@ -325,6 +330,11 @@ func (c *Config) marshallInto(into *os.File, xtream bool) error {
 
 // ReplaceURL replace original playlist url by proxy url
 func (c *Config) replaceURL(uri string, trackIndex int, xtream bool) (string, error) {
+	return c.replaceURLForUser(uri, trackIndex, xtream, c.User.String(), c.Password.String())
+}
+
+// ReplaceURLForUser replaces original playlist url with proxy url pointing to the specific authenticated user
+func (c *Config) replaceURLForUser(uri string, trackIndex int, xtream bool, user, password string) (string, error) {
 	oriURL, err := url.Parse(uri)
 	if err != nil {
 		return "", err
@@ -340,22 +350,33 @@ func (c *Config) replaceURL(uri string, trackIndex int, xtream bool) (string, er
 		customEnd = fmt.Sprintf("/%s", customEnd)
 	}
 
+	escapedUser := url.PathEscape(user)
+	escapedPass := url.PathEscape(password)
+	if escapedUser == "" {
+		escapedUser = c.User.PathEscape()
+	}
+	if escapedPass == "" {
+		escapedPass = c.Password.PathEscape()
+	}
+
 	uriPath := oriURL.EscapedPath()
 	if xtream {
-		uriPath = strings.ReplaceAll(uriPath, c.XtreamUser.PathEscape(), c.User.PathEscape())
-		uriPath = strings.ReplaceAll(uriPath, c.XtreamPassword.PathEscape(), c.Password.PathEscape())
+		if c.XtreamUser.String() != "" && c.XtreamPassword.String() != "" {
+			uriPath = strings.ReplaceAll(uriPath, c.XtreamUser.PathEscape(), escapedUser)
+			uriPath = strings.ReplaceAll(uriPath, c.XtreamPassword.PathEscape(), escapedPass)
+		}
 		if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
 			for _, prov := range c.ProxyConfig.Provider.GetProviders() {
 				if prov.XtreamUser != "" {
-					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamUser), c.User.PathEscape())
+					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamUser), escapedUser)
 				}
 				if prov.XtreamPassword != "" {
-					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamPassword), c.Password.PathEscape())
+					uriPath = strings.ReplaceAll(uriPath, url.PathEscape(prov.XtreamPassword), escapedPass)
 				}
 			}
 		}
 	} else {
-		uriPath = path.Join("/", c.endpointAntiColision, c.User.PathEscape(), c.Password.PathEscape(), fmt.Sprintf("%d", trackIndex), path.Base(uriPath))
+		uriPath = path.Join("/", c.endpointAntiColision, escapedUser, escapedPass, fmt.Sprintf("%d", trackIndex), path.Base(uriPath))
 	}
 
 	basicAuth := oriURL.User.String()

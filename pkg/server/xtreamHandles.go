@@ -107,12 +107,21 @@ type cacheMeta struct {
 var hlsChannelsRedirectURL map[string]url.URL = map[string]url.URL{}
 var hlsChannelsRedirectURLLock = sync.RWMutex{}
 
+// In-memory cache for parsed m3u.Playlist objects across all authenticated users
+var rawPlaylistCache map[string]*m3u.Playlist = map[string]*m3u.Playlist{}
+var rawPlaylistCacheTime map[string]time.Time = map[string]time.Time{}
+var rawPlaylistCacheLock = sync.RWMutex{}
+
 // XXX Use key/value storage e.g: etcd, redis...
 // and remove that dirty globals
 var xtreamM3uCache map[string]cacheMeta = map[string]cacheMeta{}
 var xtreamM3uCacheLock = sync.RWMutex{}
 
 func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error {
+	return c.cacheXtreamM3uForUser(playlist, cacheName, c.User.String(), c.Password.String())
+}
+
+func (c *Config) cacheXtreamM3uForUser(playlist *m3u.Playlist, cacheName string, user, password string) error {
 	xtreamM3uCacheLock.Lock()
 	defer xtreamM3uCacheLock.Unlock()
 
@@ -126,7 +135,7 @@ func (c *Config) cacheXtreamM3u(playlist *m3u.Playlist, cacheName string) error 
 	}
 	defer f.Close()
 
-	if err := tmp.marshallInto(f, true); err != nil {
+	if err := tmp.marshallIntoForUser(f, true, user, password); err != nil {
 		return err
 	}
 	xtreamM3uCache[cacheName] = cacheMeta{path, time.Now()}
@@ -352,8 +361,23 @@ func (c *Config) xtreamGet(ctx *gin.Context) {
 		return
 	}
 
+	authUser := c.User.String()
+	authPass := c.Password.String()
+	if val, exists := ctx.Get("auth_user"); exists {
+		if u, ok := val.(*config.UserItem); ok {
+			authUser = u.Username
+			authPass = u.Password
+		}
+	} else if u := ctx.Query("username"); u != "" {
+		authUser = u
+		authPass = ctx.Query("password")
+	}
+
+	baseCacheKey := m3uURL.String()
+	userCacheKey := fmt.Sprintf("%s:%s", baseCacheKey, authUser)
+
 	xtreamM3uCacheLock.RLock()
-	meta, ok := xtreamM3uCache[m3uURL.String()]
+	meta, ok := xtreamM3uCache[userCacheKey]
 	d := time.Since(meta.Time)
 	isExpired := d.Hours() >= float64(c.M3UCacheExpiration)
 	xtreamM3uCacheLock.RUnlock()
@@ -361,28 +385,28 @@ func (c *Config) xtreamGet(ctx *gin.Context) {
 	if ok {
 		ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, c.M3UFileName))
 		xtreamM3uCacheLock.RLock()
-		path := xtreamM3uCache[m3uURL.String()].string
+		path := xtreamM3uCache[userCacheKey].string
 		xtreamM3uCacheLock.RUnlock()
 		ctx.Header("Content-Type", "application/octet-stream")
 		ctx.File(path)
 
 		if isExpired {
 			c.refreshingMutex.Lock()
-			if !c.refreshing[m3uURL.String()] {
-				c.refreshing[m3uURL.String()] = true
+			if !c.refreshing[userCacheKey] {
+				c.refreshing[userCacheKey] = true
 				c.refreshingMutex.Unlock()
 
 				go func() {
 					defer func() {
 						c.refreshingMutex.Lock()
-						c.refreshing[m3uURL.String()] = false
+						c.refreshing[userCacheKey] = false
 						c.refreshingMutex.Unlock()
 					}()
 
 					log.Printf("[iptv-proxy] Background M3U refresh starting...")
 					playlist, err := m3u.Parse(m3uURL.String())
 					if err == nil {
-						c.cacheXtreamM3u(&playlist, m3uURL.String())
+						c.cacheXtreamM3uForUser(&playlist, userCacheKey, authUser, authPass)
 						log.Printf("[iptv-proxy] Background M3U refresh completed successfully.")
 					} else {
 						log.Printf("[iptv-proxy] Background M3U refresh failed: %v", err)
@@ -419,14 +443,14 @@ func (c *Config) xtreamGet(ctx *gin.Context) {
 	}
 	playlist.Tracks = filteredTracks
 
-	if err := c.cacheXtreamM3u(&playlist, m3uURL.String()); err != nil {
+	if err := c.cacheXtreamM3uForUser(&playlist, userCacheKey, authUser, authPass); err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
 	}
 
 	ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, c.M3UFileName))
 	xtreamM3uCacheLock.RLock()
-	path := xtreamM3uCache[m3uURL.String()].string
+	path := xtreamM3uCache[userCacheKey].string
 	xtreamM3uCacheLock.RUnlock()
 	ctx.Header("Content-Type", "application/octet-stream")
 
@@ -440,13 +464,27 @@ func (c *Config) xtreamApiGet(ctx *gin.Context) {
 	)
 
 	var (
-		extension = ctx.Query("output")
-		cacheName = apiGet + extension
+		extension    = ctx.Query("output")
+		baseCacheKey = apiGet + extension
 	)
-	log.Printf("[iptv-proxy] Extension: %s, CacheName: %s", extension, cacheName)
+
+	authUser := c.User.String()
+	authPass := c.Password.String()
+	if val, exists := ctx.Get("auth_user"); exists {
+		if u, ok := val.(*config.UserItem); ok {
+			authUser = u.Username
+			authPass = u.Password
+		}
+	} else if u := ctx.Query("username"); u != "" {
+		authUser = u
+		authPass = ctx.Query("password")
+	}
+
+	userCacheKey := fmt.Sprintf("%s:%s", baseCacheKey, authUser)
+	log.Printf("[iptv-proxy] User: %s, Extension: %s, CacheName: %s", authUser, extension, userCacheKey)
 
 	xtreamM3uCacheLock.RLock()
-	meta, ok := xtreamM3uCache[cacheName]
+	meta, ok := xtreamM3uCache[userCacheKey]
 	d := time.Since(meta.Time)
 	isExpired := d.Hours() >= float64(c.M3UCacheExpiration)
 	xtreamM3uCacheLock.RUnlock()
@@ -456,28 +494,33 @@ func (c *Config) xtreamApiGet(ctx *gin.Context) {
 	if ok {
 		ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, c.M3UFileName))
 		xtreamM3uCacheLock.RLock()
-		path := xtreamM3uCache[cacheName].string
+		path := xtreamM3uCache[userCacheKey].string
 		xtreamM3uCacheLock.RUnlock()
 		ctx.Header("Content-Type", "application/octet-stream")
 		ctx.File(path)
 
 		if isExpired {
 			c.refreshingMutex.Lock()
-			if !c.refreshing[cacheName] {
-				c.refreshing[cacheName] = true
+			if !c.refreshing[baseCacheKey] {
+				c.refreshing[baseCacheKey] = true
 				c.refreshingMutex.Unlock()
 
 				go func() {
 					defer func() {
 						c.refreshingMutex.Lock()
-						c.refreshing[cacheName] = false
+						c.refreshing[baseCacheKey] = false
 						c.refreshingMutex.Unlock()
 					}()
 
 					log.Printf("[iptv-proxy] Background API M3U refresh starting...")
 					playlist, err := c.xtreamGenerateM3u(userAgent, extension)
 					if err == nil {
-						c.cacheXtreamM3u(playlist, cacheName)
+						rawPlaylistCacheLock.Lock()
+						rawPlaylistCache[baseCacheKey] = playlist
+						rawPlaylistCacheTime[baseCacheKey] = time.Now()
+						rawPlaylistCacheLock.Unlock()
+
+						c.cacheXtreamM3uForUser(playlist, userCacheKey, authUser, authPass)
 						log.Printf("[iptv-proxy] Background API M3U refresh completed successfully.")
 					} else {
 						log.Printf("[iptv-proxy] Background API M3U refresh failed: %v", err)
@@ -490,20 +533,38 @@ func (c *Config) xtreamApiGet(ctx *gin.Context) {
 		return
 	}
 
-	log.Printf("[iptv-proxy] %v | %s | xtream cache API m3u file\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP())
-	playlist, err := c.xtreamGenerateM3u(userAgent, extension)
-	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
-		return
+	// Check if in-memory raw playlist cache is valid
+	rawPlaylistCacheLock.RLock()
+	rawPl, rawPlOk := rawPlaylistCache[baseCacheKey]
+	rawTime := rawPlaylistCacheTime[baseCacheKey]
+	rawExpired := time.Since(rawTime).Hours() >= float64(c.M3UCacheExpiration)
+	rawPlaylistCacheLock.RUnlock()
+
+	var playlist *m3u.Playlist
+	if rawPlOk && !rawExpired && rawPl != nil {
+		playlist = rawPl
+	} else {
+		log.Printf("[iptv-proxy] %v | %s | xtream generating API m3u from providers\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP())
+		var err error
+		playlist, err = c.xtreamGenerateM3u(userAgent, extension)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
+			return
+		}
+		rawPlaylistCacheLock.Lock()
+		rawPlaylistCache[baseCacheKey] = playlist
+		rawPlaylistCacheTime[baseCacheKey] = time.Now()
+		rawPlaylistCacheLock.Unlock()
 	}
-	if err := c.cacheXtreamM3u(playlist, cacheName); err != nil {
+
+	if err := c.cacheXtreamM3uForUser(playlist, userCacheKey, authUser, authPass); err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
 	}
 
 	ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, c.M3UFileName))
 	xtreamM3uCacheLock.RLock()
-	path := xtreamM3uCache[cacheName].string
+	path := xtreamM3uCache[userCacheKey].string
 	xtreamM3uCacheLock.RUnlock()
 	ctx.Header("Content-Type", "application/octet-stream")
 
@@ -1260,14 +1321,24 @@ func (c *Config) xtreamHlsrStream(ctx *gin.Context) {
 		return
 	}
 
+	targetProv, _ := c.ResolveTargetStream("live", channel)
+	upstreamUser := targetProv.XtreamUser
+	upstreamPass := targetProv.XtreamPassword
+	if upstreamUser == "" {
+		upstreamUser = c.XtreamUser.String()
+	}
+	if upstreamPass == "" {
+		upstreamPass = c.XtreamPassword.String()
+	}
+
 	req, err := url.Parse(
 		fmt.Sprintf(
 			"%s://%s/hlsr/%s/%s/%s/%s/%s/%s",
 			url.Scheme,
 			url.Host,
 			ctx.Param("token"),
-			c.XtreamUser,
-			c.XtreamPassword,
+			upstreamUser,
+			upstreamPass,
 			ctx.Param("channel"),
 			ctx.Param("hash"),
 			ctx.Param("chunk"),
@@ -1539,11 +1610,28 @@ func (c *Config) hlsXtreamStream(ctx *gin.Context, oriURL *url.URL) {
 }
 
 func (c *Config) rewriteM3U8Body(body string, ctx *gin.Context, location *url.URL) string {
-	body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+	targetUser := ctx.Param("user")
+	targetPass := ctx.Param("password")
+	if targetUser == "" {
+		if val, exists := ctx.Get("auth_user"); exists {
+			if u, ok := val.(*config.UserItem); ok {
+				targetUser = u.Username
+				targetPass = u.Password
+			}
+		}
+	}
+	if targetUser == "" {
+		targetUser = c.User.String()
+	}
+	if targetPass == "" {
+		targetPass = c.Password.String()
+	}
+
+	body = strings.ReplaceAll(body, "/"+c.XtreamUser.String()+"/"+c.XtreamPassword.String()+"/", "/"+targetUser+"/"+targetPass+"/")
 	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
 		for _, prov := range c.ProxyConfig.Provider.GetProviders() {
 			if prov.XtreamUser != "" && prov.XtreamPassword != "" {
-				body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+c.User.String()+"/"+c.Password.String()+"/")
+				body = strings.ReplaceAll(body, "/"+prov.XtreamUser+"/"+prov.XtreamPassword+"/", "/"+targetUser+"/"+targetPass+"/")
 			}
 		}
 	}

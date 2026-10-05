@@ -24,9 +24,9 @@ You do **not** need to create or edit any YAML or configuration files to get sta
 
 ### Step 1: Install Docker on your VPS (Debian / Ubuntu)
 ```bash
-apt update && apt upgrade -y
-apt install -y docker.io docker-compose curl git jq ufw
-systemctl enable --now docker
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y docker.io docker-compose curl git jq ufw
+sudo systemctl enable --now docker
 ```
 
 ### Step 2: Configure Firewall & Open Ports
@@ -34,14 +34,14 @@ Make sure port `8080` (and `22` for SSH) are open so your IPTV apps and browser 
 
 ```bash
 # 1. Allow SSH first so you don't get locked out of your VPS!
-ufw allow 22/tcp
+sudo ufw allow 22/tcp
 
 # 2. Open port 8080 for the IPTV Proxy & Web Admin
-ufw allow 8080/tcp
+sudo ufw allow 8080/tcp
 
 # 3. Enable UFW firewall
-ufw --force enable
-ufw status
+sudo ufw --force enable
+sudo ufw status
 ```
 
 > [!IMPORTANT]
@@ -50,24 +50,30 @@ ufw status
 >
 > **Oracle Cloud Ubuntu Users:** Oracle instances have an extra `iptables` rule that blocks ports by default even when UFW is open. Run:
 > ```bash
-> iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8080 -j ACCEPT
-> netfilter-persistent save 2>/dev/null || true
+> sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8080 -j ACCEPT
+> sudo netfilter-persistent save 2>/dev/null || true
 > ```
 
 ### Step 3: Clone and Start
+> [!IMPORTANT]
+> Make sure to clone **this repository** (`chernandezweb/iptv-proxy`). Do not clone upstream `pierre-emmanuelJ`, as the upstream repository lacks the Web Admin UI, multi-provider failover, and category filtering!
+
 ```bash
 git clone https://github.com/chernandezweb/iptv-proxy.git ~/iptv-proxy
 cd ~/iptv-proxy
 docker compose up -d --build
 ```
+*(Note: If your system has Docker Compose v1 instead of the v2 plugin, use `docker-compose up -d --build`)*
 
 ### Step 4: Open the Web Admin Dashboard
 Open your browser (on desktop or mobile) and go to:
 ```text
 http://<YOUR_VPS_IP>:8080/admin/
 ```
-* **Default Username**: `admin`
+* **Default Username**: `admin` *(or `root` if running an older compose config where the Linux host's `$USER` variable took precedence)*
 * **Default Password**: `admin`
+
+*(You can immediately change the admin username and password from the dashboard under the **Users** tab -> **Web Admin Login Credentials**).*
 
 That's it! Everything can be configured directly from the Web Admin:
 1. **Providers Tab**: Click **➕ Add Your First Provider** to enter your Xtream URL, username, password, and optional backup failover URLs.
@@ -299,8 +305,26 @@ Some IPTV providers block standard HTTP clients or specific User-Agents. Set `US
   git update-index --skip-worktree docker-compose.yml
   docker compose up -d --build
   ```
-* **Customizing Ports without modifying tracked files:**
-  You can create an optional `.env` file (e.g. `PORT=9000`) or a `docker-compose.override.yml`. Both are ignored by Git, ensuring updates run smoothly with zero conflicts.
+### 6. Getting "404 page not found" when opening `/admin/`
+If navigating to `http://<YOUR_VPS_IP>:8080/admin/` returns `404 page not found`:
+* **Cause**: You are running the upstream repository (`pierre-emmanuelJ/iptv-proxy`), which does not include the Web Admin panel, or Docker reused an old cached container image.
+* **Fix**: Check `git remote -v`. Ensure it points to `https://github.com/chernandezweb/iptv-proxy.git`.
+  ```bash
+  cd ~/iptv-proxy
+  git remote -v
+  # If pointing to the wrong repository or an outdated branch:
+  cd ~ && rm -rf ~/iptv-proxy
+  git clone https://github.com/chernandezweb/iptv-proxy.git ~/iptv-proxy
+  cd ~/iptv-proxy
+  docker compose up -d --build
+  ```
+
+### 7. Browser login prompt rejects default "admin" / "admin"
+* **Cause**: On Linux / SSH, the environment variable `$USER` is set by the OS to the active user (e.g. `root`). In older configurations, Docker Compose used `${USER:-admin}`, which inherited `USER=root` from your host shell.
+* **Fix**:
+  1. Try logging in with Username: **`root`** and Password: **`admin`**.
+  2. Once inside the dashboard, navigate to the **Users** tab -> **Web Admin Login Credentials** to set any username and password you prefer.
+  3. Pull the latest version (`git pull origin master`) where `ADMIN_USER` is used instead to avoid shell `$USER` conflicts.
 
 ---
 

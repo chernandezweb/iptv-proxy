@@ -18,6 +18,7 @@ services:
       DATA_DIR: "/data"
       GIN_MODE: release
       # Initial fallback credentials (can also be customized in .env or Web UI -> Users)
-      USER: "${USER:-admin}"
-      PASSWORD: "${PASSWORD:-admin}"
+      # Uses ADMIN_USER / ADMIN_PASSWORD to avoid collision with Linux system $USER variable (e.g. root)
+      USER: "${ADMIN_USER:-admin}"
+      PASSWORD: "${ADMIN_PASSWORD:-admin}"
       HOSTNAME: "${HOSTNAME:-}"

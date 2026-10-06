@@ -102,6 +102,15 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 	requestRangeHeader := ctx.Request.Header.Get("Range")
 	forwardRange := requestRangeHeader != ""
 
+	// Check if this stream can be multiplexed through the shared stream hub (live broadcasts).
+	// When enabled, multiple viewers watching the same live channel share 1 upstream connection.
+	isLiveBroadcast := !forwardRange && (strings.Contains(oriURL.Path, ".ts") || strings.Contains(ctx.Request.URL.Path, "/live/") || (!strings.Contains(oriURL.Path, "/movie/") && !strings.Contains(oriURL.Path, "/series/")))
+	if c.streamHub != nil && isLiveBroadcast && c.IsSharedStreamEnabled() {
+		if c.streamHub.TryPlaySharedStream(ctx, c, client, oriURL) {
+			return
+		}
+	}
+
 	resp, err := c.forwardStreamRequest(ctx, client, oriURL, forwardRange)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
@@ -193,8 +202,12 @@ func (c *Config) forwardStreamRequest(ctx *gin.Context, client *http.Client, ori
 
 	mergeHttpHeader(req.Header, ctx.Request.Header)
 
-	// User-Agent masquerading: use single unified User-Agent for all devices to prevent fingerprinting
-	req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
+	// User-Agent: use original client UA if enabled, otherwise use configured masquerade UA
+	if c.IsPassOriginalUserAgent() && ctx.Request.Header.Get("User-Agent") != "" {
+		req.Header.Set("User-Agent", ctx.Request.Header.Get("User-Agent"))
+	} else {
+		req.Header.Set("User-Agent", c.GetUpstreamUserAgent())
+	}
 
 	if c.Referer != "" {
 		req.Header.Set("Referer", c.Referer)

@@ -1451,6 +1451,41 @@
             </div>
         </div>
 
+        <!-- Controls and Mode Card -->
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; margin-bottom:1.5rem; display:flex; flex-direction:column; gap:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <strong style="font-size:1.05rem; color:var(--text);">📡 Smart Shared Stream Relay (Multiplexing)</strong>
+                        <span id="relayStatusPill" class="url-pill" style="font-size:0.75rem;">Direct 1:1</span>
+                    </div>
+                    <p style="margin:0.25rem 0 0 0; font-size:0.85rem; color:var(--text-muted); max-width:700px;">
+                        When <strong>enabled</strong>, if multiple devices/accounts watch the same live TV channel simultaneously, the proxy fetches <strong>1 single upstream connection</strong> and multiplexes it locally to save your IPTV provider connections. When <strong>disabled</strong>, each device streams directly with 1:1 pass-through.
+                    </p>
+                </div>
+                <label class="switch-toggle" style="margin:0;">
+                    <input type="checkbox" id="streamRelayToggle" onchange="toggleStreamRelayMode()">
+                    <span id="relayToggleLabel" style="font-weight:600; font-size:0.9rem; color:var(--text);">Direct 1:1 Mode</span>
+                </label>
+            </div>
+
+            <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.85rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <strong style="font-size:0.95rem; color:var(--text);">🎭 Pass Original Client User-Agent</strong>
+                        <span id="uaStatusPill" class="url-pill" style="font-size:0.75rem;">Masquerade (IPTVSmartersPro)</span>
+                    </div>
+                    <p style="margin:0.2rem 0 0 0; font-size:0.82rem; color:var(--text-muted); max-width:700px;">
+                        Forward the client player's genuine User-Agent (TiviMate, VLC, Televizo) directly to your IPTV provider instead of masking it with <code>IPTVSmartersPro</code>. Useful if your provider limits multiple streams sharing the same User-Agent.
+                    </p>
+                </div>
+                <label class="switch-toggle" style="margin:0;">
+                    <input type="checkbox" id="passOriginalUaToggle" onchange="togglePassOriginalUa()">
+                    <span id="uaToggleLabel" style="font-weight:600; font-size:0.85rem; color:var(--text);">Masquerade</span>
+                </label>
+            </div>
+        </div>
+
         <!-- Metrics cards -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
             <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
@@ -1459,14 +1494,14 @@
             </div>
             <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
                 <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Streaming Engine</div>
-                <div style="font-size:1.05rem; font-weight:600; color:var(--success); margin-top:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+                <div id="statStreamingEngine" style="font-size:1.05rem; font-weight:600; color:var(--success); margin-top:0.6rem; display:flex; align-items:center; gap:0.4rem;">
                     <span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> Direct 1:1 Pass-Through
                 </div>
             </div>
             <div class="pool-card" style="margin-top:0; padding:1rem 1.25rem;">
-                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Compatibility</div>
-                <div style="font-size:1.05rem; font-weight:600; color:#38bdf8; margin-top:0.6rem;">
-                    TiviMate, Televizo, VLC
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Multiplexed Channels</div>
+                <div id="statRelayChannels" style="font-size:1.75rem; font-weight:700; color:#a5b4fc; margin-top:0.35rem;">
+                    0
                 </div>
             </div>
         </div>
@@ -2841,19 +2876,112 @@
     // ==========================================
     let streamRefreshTimer = null;
 
+    function updateStreamRelayUI(enabled) {
+        const toggle = document.getElementById('streamRelayToggle');
+        const pill = document.getElementById('relayStatusPill');
+        const label = document.getElementById('relayToggleLabel');
+        const engine = document.getElementById('statStreamingEngine');
+
+        if (toggle) toggle.checked = !!enabled;
+        if (pill) {
+            pill.className = 'url-pill ' + (enabled ? 'online' : 'active');
+            pill.innerText = enabled ? '📡 Smart Relay ON' : '⚡ Direct 1:1';
+        }
+        if (label) {
+            label.innerText = enabled ? 'Smart Relay Enabled' : 'Direct 1:1 Mode';
+            label.style.color = enabled ? 'var(--success)' : 'var(--text)';
+        }
+        if (engine) {
+            engine.innerHTML = enabled
+                ? '<span class="status-dot" style="background:#a5b4fc; width:9px; height:9px;"></span> Smart Shared Relay'
+                : '<span class="status-dot" style="background:var(--success); width:9px; height:9px;"></span> Direct 1:1 Pass-Through';
+        }
+    }
+
+    function updatePassOriginalUaUI(passOriginal) {
+        const toggle = document.getElementById('passOriginalUaToggle');
+        const pill = document.getElementById('uaStatusPill');
+        const label = document.getElementById('uaToggleLabel');
+
+        if (toggle) toggle.checked = !!passOriginal;
+        if (pill) {
+            pill.className = 'url-pill ' + (passOriginal ? 'online' : '');
+            pill.innerText = passOriginal ? 'Forward Client UA' : 'Masquerade (IPTVSmartersPro)';
+        }
+        if (label) {
+            label.innerText = passOriginal ? 'Client UA Forwarded' : 'Masquerade UA';
+            label.style.color = passOriginal ? '#38bdf8' : 'var(--text)';
+        }
+    }
+
+    async function toggleStreamRelayMode() {
+        const toggle = document.getElementById('streamRelayToggle');
+        const enabled = toggle.checked;
+        try {
+            const res = await fetch('/admin/api/stream-relay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Streaming mode updated', 'success');
+                updateStreamRelayUI(enabled);
+                loadStreams();
+            } else {
+                toggle.checked = !enabled;
+                showToast(data.error || 'Failed updating streaming mode', 'error');
+            }
+        } catch (e) {
+            toggle.checked = !enabled;
+            showToast('Network error: ' + e.message, 'error');
+        }
+    }
+
+    async function togglePassOriginalUa() {
+        const toggle = document.getElementById('passOriginalUaToggle');
+        const passOriginal = toggle.checked;
+        try {
+            const res = await fetch('/admin/api/user-agent-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pass_original_ua: passOriginal })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'User-Agent setting updated', 'success');
+                updatePassOriginalUaUI(passOriginal);
+            } else {
+                toggle.checked = !passOriginal;
+                showToast(data.error || 'Failed updating User-Agent setting', 'error');
+            }
+        } catch (e) {
+            toggle.checked = !passOriginal;
+            showToast('Network error: ' + e.message, 'error');
+        }
+    }
+
     async function loadStreams() {
         try {
             const res = await fetch('/admin/api/streams');
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             state.streams = data.streams || [];
+            state.relays = data.relays || [];
             
             const badge = document.getElementById('streamsBadge');
             const statStreams = document.getElementById('statTotalStreams');
-            if (badge) badge.innerText = state.streams.length;
-            if (statStreams) statStreams.innerText = state.streams.length;
+            const statRelayCh = document.getElementById('statRelayChannels');
+            
+            const totalActive = (state.streams.length || 0) + (data.total_relay_viewers || 0);
+            if (badge) badge.innerText = totalActive;
+            if (statStreams) statStreams.innerText = totalActive;
+            if (statRelayCh) statRelayCh.innerText = state.relays.length || 0;
 
-            renderStreams();
+            updateStreamRelayUI(data.relay_enabled);
+            updatePassOriginalUaUI(data.pass_original_ua);
+
+            renderStreams(data.relay_enabled);
         } catch (e) {
             console.error('Error loading streams:', e);
             document.getElementById('streamsListContainer').innerHTML = `
@@ -2864,87 +2992,112 @@
         }
     }
 
-    function renderStreams() {
+    function renderStreams(relayEnabled) {
         const container = document.getElementById('streamsListContainer');
-        if (!state.streams || state.streams.length === 0) {
+        const hasDirect = state.streams && state.streams.length > 0;
+        const hasRelays = state.relays && state.relays.length > 0;
+
+        if (!hasDirect && !hasRelays) {
+            const desc = relayEnabled 
+                ? 'Smart Shared Relay is active. When multiple devices watch the same channel, it will be automatically multiplexed into 1 upstream connection here.'
+                : 'Direct 1:1 Pass-Through mode is active. Streams connect directly with maximum speed and zero buffering.';
             container.innerHTML = `
                 <div style="padding:3rem 1.5rem; text-align:center; background:var(--bg-card-subtle); border:1px dashed var(--border); border-radius:var(--radius); color:var(--text-muted);">
-                    <div style="font-size:2rem; margin-bottom:0.75rem;">⚡</div>
+                    <div style="font-size:2rem; margin-bottom:0.75rem;">${relayEnabled ? '📡' : '⚡'}</div>
                     <div style="font-weight:600; font-size:1.1rem; color:var(--text); margin-bottom:0.4rem;">No Active Streams</div>
-                    <p style="margin:0; font-size:0.9rem; max-width:600px; margin:0 auto;">When any connected IPTV app plays a live channel, movie, or series, the active session will appear here in real time.</p>
+                    <p style="margin:0; font-size:0.9rem; max-width:600px; margin:0 auto;">${desc}</p>
                 </div>
             `;
             return;
         }
 
-        let tableHtml = `
-            <div class="table-responsive desktop-only">
-                <table class="url-list-table">
-                    <thead>
-                        <tr>
-                            <th>User Account</th>
-                            <th>Client IP</th>
-                            <th>Channel / Stream URI</th>
-                            <th>Duration</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
+        let html = '';
 
-        let cardsHtml = `<div class="stream-cards-grid mobile-only">`;
-
-        state.streams.forEach(s => {
-            tableHtml += `
-                <tr>
-                    <td>
-                        <strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong>
-                    </td>
-                    <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(s.ip || 'Unknown')}</code></td>
-                    <td>
-                        <strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</strong>
-                    </td>
-                    <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(s.duration || '0s')}</span></td>
-                    <td>
-                        <span class="url-pill online">
-                            <span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Streaming
-                        </span>
-                    </td>
-                </tr>
+        // Section 1: Multiplexed Shared Streams (if any)
+        if (hasRelays) {
+            html += `
+                <div style="margin-bottom:1.5rem;">
+                    <h3 style="font-size:0.95rem; text-transform:uppercase; color:#a5b4fc; margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem;">
+                        <span>📡 Multiplexed Live Channels (${state.relays.length})</span>
+                        <span class="url-pill online">Saving Upstream Connections</span>
+                    </h3>
+                    <div class="table-responsive">
+                        <table class="url-list-table">
+                            <thead>
+                                <tr>
+                                    <th>Channel Stream Key</th>
+                                    <th>Active Viewers</th>
+                                    <th>Client IPs Sharing Stream</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
             `;
+            state.relays.forEach(r => {
+                const ips = (r.client_ips || []).join(', ') || 'Direct';
+                html += `
+                    <tr>
+                        <td><strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(r.key || r.url)}</strong></td>
+                        <td><span class="url-pill online">👥 ${r.viewers} viewer${r.viewers > 1 ? 's' : ''} (1 upstream)</span></td>
+                        <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(ips)}</code></td>
+                        <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(r.duration || '0s')}</span></td>
+                        <td><span class="url-pill online"><span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Multiplexed</span></td>
+                    </tr>
+                `;
+            });
+            html += `</tbody></table></div></div>`;
+        }
 
-            cardsHtml += `
-                <div class="stream-card-item">
-                    <div class="stream-card-header">
-                        <strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong>
-                        <span class="url-pill online"><span class="status-dot" style="background:var(--success); width:6px; height:6px;"></span> Streaming</span>
-                    </div>
-                    <div class="stream-card-meta">
-                        <div class="stream-card-meta-row">
-                            <span>Client IP</span>
-                            <code>${escapeHtml(s.ip || 'Unknown')}</code>
-                        </div>
-                        <div class="stream-card-meta-row">
-                            <span>Channel / URI</span>
-                            <code style="color:#a5b4fc; word-break:break-all;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</code>
-                        </div>
-                        <div class="stream-card-meta-row">
-                            <span>Duration</span>
-                            <span>⏱️ ${escapeHtml(s.duration || '0s')}</span>
-                        </div>
-                    </div>
-                </div>
+        // Section 2: Direct Player Sessions
+        if (hasDirect) {
+            html += `
+                <div>
+                    <h3 style="font-size:0.95rem; text-transform:uppercase; color:var(--text-muted); margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.5rem;">
+                        <span>📺 Active Player Sessions (${state.streams.length})</span>
+                    </h3>
+                    <div class="table-responsive desktop-only">
+                        <table class="url-list-table">
+                            <thead>
+                                <tr>
+                                    <th>User Account</th>
+                                    <th>Client IP</th>
+                                    <th>Channel / Stream URI</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
             `;
-        });
+            let cardsHtml = `<div class="stream-cards-grid mobile-only">`;
+            state.streams.forEach(s => {
+                html += `
+                    <tr>
+                        <td><strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong></td>
+                        <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(s.ip || 'Unknown')}</code></td>
+                        <td><strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</strong></td>
+                        <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(s.duration || '0s')}</span></td>
+                        <td><span class="url-pill online"><span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Streaming</span></td>
+                    </tr>
+                `;
+                cardsHtml += `
+                    <div class="stream-card-item">
+                        <div class="stream-card-header">
+                            <strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong>
+                            <span class="url-pill online"><span class="status-dot" style="background:var(--success); width:6px; height:6px;"></span> Streaming</span>
+                        </div>
+                        <div class="stream-card-meta">
+                            <div class="stream-card-meta-row"><span>Client IP</span><code>${escapeHtml(s.ip || 'Unknown')}</code></div>
+                            <div class="stream-card-meta-row"><span>Channel / URI</span><code style="color:#a5b4fc; word-break:break-all;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</code></div>
+                            <div class="stream-card-meta-row"><span>Duration</span><span>⏱️ ${escapeHtml(s.duration || '0s')}</span></div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</tbody></table></div>` + cardsHtml + `</div></div>`;
+        }
 
-        tableHtml += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-        cardsHtml += `</div>`;
-
-        container.innerHTML = tableHtml + cardsHtml;
+        container.innerHTML = html;
     }
 
     function toggleStreamAutoRefresh() {

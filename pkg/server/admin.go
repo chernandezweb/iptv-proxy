@@ -106,6 +106,10 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/users", c.adminSaveUsers)
 	admin.DELETE("/api/users/:id", c.adminDeleteUser)
 	admin.GET("/api/streams", c.adminGetStreams)
+	admin.GET("/api/stream-relay", c.adminGetStreamRelay)
+	admin.POST("/api/stream-relay", c.adminSaveStreamRelay)
+	admin.GET("/api/user-agent-settings", c.adminGetUserAgentSettings)
+	admin.POST("/api/user-agent-settings", c.adminSaveUserAgentSettings)
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
 	admin.POST("/api/vpn-proxy", c.adminSaveVpnProxy)
 	admin.POST("/api/vpn-proxy/test", c.adminTestVpnProxy)
@@ -872,9 +876,104 @@ func (c *Config) adminGetStreams(ctx *gin.Context) {
 		sessions = []ActiveStreamSession{}
 	}
 
+	var relays []ActiveStreamInfo
+	if c.streamHub != nil {
+		relays = c.streamHub.GetActiveStreamsInfo()
+	}
+	if relays == nil {
+		relays = []ActiveStreamInfo{}
+	}
+
+	totalRelayViewers := 0
+	for _, r := range relays {
+		totalRelayViewers += r.Viewers
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
-		"streams":       sessions,
-		"total_streams": len(sessions),
+		"streams":             sessions,
+		"total_streams":       len(sessions),
+		"relays":              relays,
+		"total_relays":        len(relays),
+		"total_relay_viewers": totalRelayViewers,
+		"relay_enabled":       c.IsSharedStreamEnabled(),
+		"pass_original_ua":    c.IsPassOriginalUserAgent(),
+	})
+}
+
+func (c *Config) adminGetStreamRelay(ctx *gin.Context) {
+	enabled := c.IsSharedStreamEnabled()
+	mode := "direct"
+	if enabled {
+		mode = "shared"
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"enabled": enabled,
+		"mode":    mode,
+	})
+}
+
+func (c *Config) adminSaveStreamRelay(ctx *gin.Context) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		if err := c.ProxyConfig.Provider.SetStreamRelayEnabled(req.Enabled); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save stream relay setting: " + err.Error()})
+			return
+		}
+	}
+
+	modeStr := "Direct 1:1 Streaming"
+	if req.Enabled {
+		modeStr = "Smart Shared Stream Relay (Multiplexing)"
+	}
+	log.Printf("[iptv-proxy] Streaming mode updated: %s", modeStr)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"enabled": req.Enabled,
+		"message": fmt.Sprintf("Streaming mode switched to: %s", modeStr),
+	})
+}
+
+func (c *Config) adminGetUserAgentSettings(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, gin.H{
+		"pass_original_ua": c.IsPassOriginalUserAgent(),
+		"default_ua":       c.GetUpstreamUserAgent(),
+	})
+}
+
+func (c *Config) adminSaveUserAgentSettings(ctx *gin.Context) {
+	var req struct {
+		PassOriginalUA bool `json:"pass_original_ua"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if c.ProxyConfig != nil && c.ProxyConfig.Provider != nil {
+		if err := c.ProxyConfig.Provider.SetPassOriginalUserAgent(req.PassOriginalUA); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save User-Agent setting: " + err.Error()})
+			return
+		}
+	}
+
+	desc := "Default Masquerade User-Agent (IPTVSmartersPro)"
+	if req.PassOriginalUA {
+		desc = "Pass Client's Original User-Agent (TiviMate, VLC, etc.)"
+	}
+	log.Printf("[iptv-proxy] Upstream User-Agent mode switched to: %s", desc)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":           "success",
+		"pass_original_ua": req.PassOriginalUA,
+		"message":          fmt.Sprintf("User-Agent mode set to: %s", desc),
 	})
 }
 

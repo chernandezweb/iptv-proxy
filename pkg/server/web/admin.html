@@ -1440,34 +1440,38 @@
                 <button type="button" class="modal-close" onclick="toggleAddUserInline(false)">&times;</button>
             </div>
             <form onsubmit="event.preventDefault(); saveNewUserInline();">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="newInlineUsername">Username</label>
-                        <input type="text" id="newInlineUsername" placeholder="e.g. living_room or salon" required autocomplete="off">
-                        <span class="help-text">The login username entered into player app.</span>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.25rem; align-items: start;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="newInlineUsername" style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Username</label>
+                        <input type="text" id="newInlineUsername" placeholder="e.g. living_room or salon" required autocomplete="off" style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
                     </div>
-                    <div class="form-group">
-                        <label for="newInlinePassword">Password</label>
-                        <div class="input-wrapper">
-                            <input type="password" id="newInlinePassword" placeholder="User password" required autocomplete="off">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="newInlinePassword" style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Password</label>
+                        <div class="input-wrapper" style="width:100%; height:40px; box-sizing:border-box;">
+                            <input type="password" id="newInlinePassword" placeholder="User password" required autocomplete="off" style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
                             <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('newInlinePassword')">👁️</button>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="newInlineMaxConns">Max Concurrent Streams</label>
-                        <input type="number" id="newInlineMaxConns" min="0" max="100" value="0" required>
-                        <span class="help-text">Max simultaneous streams (<code>0</code> for unlimited).</span>
-                    </div>
-                    <div class="form-group" style="display:flex; align-items:flex-end;">
-                        <label class="switch-toggle" style="margin-bottom:0.75rem;">
-                            <input type="checkbox" id="newInlineEnabled" checked>
-                            <span style="font-weight:600;">Account Enabled</span>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="newInlineMaxConns" style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:flex; justify-content:space-between; align-items:center;">
+                            <span>Max Streams</span>
+                            <span style="font-weight:normal; font-size:0.72rem; color:var(--text-muted);">(0 = Unlimited)</span>
                         </label>
+                        <input type="number" id="newInlineMaxConns" min="0" max="100" value="0" required style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Account Status</label>
+                        <div style="height:40px; display:flex; align-items:center; background:rgba(0,0,0,0.25); border:1px solid var(--border); border-radius:6px; padding:0 0.85rem; box-sizing:border-box;">
+                            <label class="switch-toggle" style="margin:0; width:100%;">
+                                <input type="checkbox" id="newInlineEnabled" checked>
+                                <span style="font-size:0.85rem; font-weight:600; color:var(--success);">Account Enabled</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
-                <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.06);">
+                <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1.15rem; padding-top:0.85rem; border-top:1px solid rgba(255,255,255,0.06);">
                     <button type="button" class="btn btn-secondary" onclick="toggleAddUserInline(false)">Cancel</button>
-                    <button type="submit" class="btn">💾 Save Account</button>
+                    <button type="submit" class="btn btn-primary" style="background:#4f46e5; color:#ffffff; font-weight:600; padding:0.5rem 1.25rem; border:none; box-shadow:0 2px 10px rgba(79,70,229,0.45);">💾 Save Account</button>
                 </div>
             </form>
         </div>
@@ -2852,35 +2856,40 @@
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx}, false)" title="Close">&times;</button>
                             </div>
                             <form onsubmit="event.preventDefault(); saveUserInline(${idx});">
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: flex-end;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.25rem; align-items: start;">
                                     <div class="form-group" style="margin-bottom:0;">
-                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Username</label>
-                                        <input type="text" id="inlineUser_${idx}" value="${escapeHtml(u.username)}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
+                                        <label style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Username</label>
+                                        <input type="text" id="inlineUser_${idx}" value="${escapeHtml(u.username)}" required style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
                                     </div>
                                     <div class="form-group" style="margin-bottom:0;">
-                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Password</label>
-                                        <div class="input-wrapper">
-                                            <input type="password" id="inlinePass_${idx}" value="${escapeHtml(u.password)}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
+                                        <label style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Password</label>
+                                        <div class="input-wrapper" style="width:100%; height:40px; box-sizing:border-box;">
+                                            <input type="password" id="inlinePass_${idx}" value="${escapeHtml(u.password)}" required style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
                                             <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('inlinePass_${idx}')">👁️</button>
                                         </div>
                                     </div>
                                     <div class="form-group" style="margin-bottom:0;">
-                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Max Concurrent Streams</label>
-                                        <input type="number" id="inlineMax_${idx}" min="0" max="100" value="${u.max_connections !== undefined ? u.max_connections : 0}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
-                                        <span style="font-size:0.72rem; color:var(--text-muted); margin-top:2px; display:block;">Enter <code>0</code> for unlimited</span>
-                                    </div>
-                                    <div class="form-group" style="margin-bottom:0; display:flex; align-items:center; height:38px;">
-                                        <label class="switch-toggle" style="margin:0;">
-                                            <input type="checkbox" id="inlineEnabled_${idx}" ${isEnabled ? 'checked' : ''}>
-                                            <span style="font-size:0.85rem; font-weight:600; color:${isEnabled ? 'var(--success)' : 'var(--text-muted)'};">
-                                                Account Enabled
-                                            </span>
+                                        <label style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:flex; justify-content:space-between; align-items:center;">
+                                            <span>Max Streams</span>
+                                            <span style="font-weight:normal; font-size:0.72rem; color:var(--text-muted);">(0 = Unlimited)</span>
                                         </label>
+                                        <input type="number" id="inlineMax_${idx}" min="0" max="100" value="${u.max_connections !== undefined ? u.max_connections : 0}" required style="height:40px; box-sizing:border-box; width:100%; font-size:0.9rem; padding:0.45rem 0.75rem;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label style="font-size:0.8rem; font-weight:600; color:#cbd5e1; height:18px; line-height:18px; margin-bottom:0.45rem; display:block;">Account Status</label>
+                                        <div style="height:40px; display:flex; align-items:center; background:rgba(0,0,0,0.25); border:1px solid var(--border); border-radius:6px; padding:0 0.85rem; box-sizing:border-box;">
+                                            <label class="switch-toggle" style="margin:0; width:100%;">
+                                                <input type="checkbox" id="inlineEnabled_${idx}" ${isEnabled ? 'checked' : ''}>
+                                                <span style="font-size:0.85rem; font-weight:600; color:${isEnabled ? 'var(--success)' : 'var(--text-muted)'};">
+                                                    Active / Enabled
+                                                </span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
-                                <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.06);">
+                                <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1.15rem; padding-top:0.85rem; border-top:1px solid rgba(255,255,255,0.06);">
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx}, false)">Cancel</button>
-                                    <button type="submit" class="btn btn-sm">💾 Save Changes</button>
+                                    <button type="submit" class="btn btn-primary btn-sm" style="background:#4f46e5; color:#ffffff; font-weight:600; padding:0.5rem 1.15rem; border:none; box-shadow:0 2px 10px rgba(79,70,229,0.45);">💾 Save Changes</button>
                                 </div>
                             </form>
                         </div>

@@ -529,12 +529,17 @@ func (c *Config) GetAllProviderURLs() []string {
 
 // RotateToURL switches the active provider URL to newURL, updates referer, baseStreamURL, and flushes caches.
 func (c *Config) RotateToURL(newURL string) {
+	c.RotateProviderToURL("", newURL)
+}
+
+// RotateProviderToURL switches the active server URL for a specific provider (or global primary), updates referer, baseStreamURL, and flushes caches.
+func (c *Config) RotateProviderToURL(providerID string, newURL string) {
 	newClean := strings.TrimRight(strings.TrimSpace(newURL), "/")
-	if newClean == "" || newClean == c.XtreamBaseURL {
+	if newClean == "" {
 		return
 	}
 
-	log.Printf("[iptv-proxy] Failover triggered: switching provider base URL from %q to %q", c.XtreamBaseURL, newClean)
+	log.Printf("[iptv-proxy] Switching provider %q base URL from %q to %q", providerID, c.XtreamBaseURL, newClean)
 	c.XtreamBaseURL = newClean
 	c.Referer = newClean
 	c.ProxyConfig.XtreamBaseURL = newClean
@@ -545,7 +550,7 @@ func (c *Config) RotateToURL(newURL string) {
 	}
 
 	if c.ProxyConfig.Provider != nil {
-		if err := c.ProxyConfig.Provider.SetActiveURL(newClean); err != nil {
+		if err := c.ProxyConfig.Provider.SetActiveURLForProvider(providerID, newClean); err != nil {
 			log.Printf("[iptv-proxy] Error persisting rotated active URL: %v", err)
 		}
 		c.ProxyConfig.BackupURLs = c.ProxyConfig.Provider.GetData().BackupURLs

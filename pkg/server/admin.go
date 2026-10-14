@@ -670,17 +670,18 @@ func (c *Config) adminTestProvider(ctx *gin.Context) {
 
 func (c *Config) adminRotateProvider(ctx *gin.Context) {
 	var body struct {
-		URL string `json:"url"`
+		ProviderID string `json:"provider_id"`
+		URL        string `json:"url"`
 	}
 	ctx.BindJSON(&body)
 
 	target := config.CleanURL(body.URL)
 	if target != "" {
-		c.RotateToURL(target)
+		c.RotateProviderToURL(body.ProviderID, target)
 		ctx.JSON(http.StatusOK, gin.H{
 			"status":     "success",
 			"active_url": c.XtreamBaseURL,
-			"message":    fmt.Sprintf("Switched active provider to %s", c.XtreamBaseURL),
+			"message":    fmt.Sprintf("Switched active server to %s", target),
 		})
 		return
 	}

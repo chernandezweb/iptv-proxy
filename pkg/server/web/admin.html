@@ -840,12 +840,12 @@
         }
 
         .mobile-only {
-            display: none;
+            display: none !important;
         }
 
         /* Mobile User Card Styling */
         .user-cards-grid, .stream-cards-grid {
-            display: flex;
+            display: none;
             flex-direction: column;
             gap: 0.85rem;
         }
@@ -962,6 +962,10 @@
             }
 
             .mobile-only {
+                display: flex !important;
+            }
+
+            .user-cards-grid, .stream-cards-grid {
                 display: flex !important;
             }
 
@@ -1179,17 +1183,18 @@
         <!-- Detailed URL Health Results Card -->
         <div id="testResultCard" class="pool-card" style="display: none; margin-bottom: 1.5rem;">
             <h3>
-                <span>📊 Server URLs Detailed Health &amp; Failover Status</span>
+                <span>📊 Server URLs Detailed Health &amp; Failover Status (Sorted by Speed)</span>
                 <span id="testSummaryBadge" class="status-badge online" style="font-size: 0.75rem;">Tested</span>
             </h3>
             <div class="table-responsive">
                 <table class="url-list-table">
                     <thead>
                         <tr>
-                            <th>Provider &amp; URL</th>
+                            <th>Provider &amp; Server URL</th>
                             <th>Status</th>
-                            <th>Latency</th>
+                            <th>Speed / Latency</th>
                             <th>Account Details &amp; Categories</th>
+                            <th style="text-align: right;">Action</th>
                         </tr>
                     </thead>
                     <tbody id="urlTableBody"></tbody>
@@ -1409,7 +1414,7 @@
                 <p class="subtitle">Credentials given to users/devices to stream through this proxy with concurrent connection limits.</p>
             </div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                <button type="button" class="btn" onclick="openUserModal(-1)">
+                <button type="button" class="btn" onclick="toggleAddUserInline()">
                     ➕ Add Player Account
                 </button>
             </div>
@@ -1424,6 +1429,47 @@
                 <div>🚫 <strong>Device Concurrency Protection:</strong> When maximum active connections are reached and another device/IP tries to stream, the request is rejected with <code>403 Forbidden</code>.</div>
                 <div>👤 <strong>Player Setup:</strong> Users log in to Televizo, TiviMate, or IPTV Smarters with their proxy username and password pointing to <code>http://vps:8080</code>.</div>
             </div>
+        </div>
+
+        <!-- INLINE ADD USER BOX -->
+        <div id="inlineAddUserBox" class="pool-card" style="display: none; margin-bottom: 1.5rem; border: 1px solid rgba(99, 102, 241, 0.4); background: rgba(15, 23, 42, 0.85); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h3 style="margin:0; font-size:1.05rem; color:#fff; display:flex; align-items:center; gap:0.4rem;">
+                    ➕ <span>Add New IPTV Player Account</span>
+                </h3>
+                <button type="button" class="modal-close" onclick="toggleAddUserInline(false)">&times;</button>
+            </div>
+            <form onsubmit="event.preventDefault(); saveNewUserInline();">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="newInlineUsername">Username</label>
+                        <input type="text" id="newInlineUsername" placeholder="e.g. living_room or salon" required autocomplete="off">
+                        <span class="help-text">The login username entered into player app.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="newInlinePassword">Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" id="newInlinePassword" placeholder="User password" required autocomplete="off">
+                            <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('newInlinePassword')">👁️</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="newInlineMaxConns">Max Concurrent Streams</label>
+                        <input type="number" id="newInlineMaxConns" min="0" max="100" value="0" required>
+                        <span class="help-text">Max simultaneous streams (<code>0</code> for unlimited).</span>
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:flex-end;">
+                        <label class="switch-toggle" style="margin-bottom:0.75rem;">
+                            <input type="checkbox" id="newInlineEnabled" checked>
+                            <span style="font-weight:600;">Account Enabled</span>
+                        </label>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" class="btn btn-secondary" onclick="toggleAddUserInline(false)">Cancel</button>
+                    <button type="submit" class="btn">💾 Save Account</button>
+                </div>
+            </form>
         </div>
 
         <div id="usersListContainer">
@@ -2337,39 +2383,133 @@
         }
     }
 
+    function cleanUrl(u) {
+        if (!u) return '';
+        return u.replace(/\/+$/, '').toLowerCase();
+    }
+
     function renderTestBreakdown(providersResults) {
+        window.lastTestBreakdown = providersResults;
         const card = document.getElementById('testResultCard');
         const tbody = document.getElementById('urlTableBody');
         card.style.display = 'block';
 
-        let html = '';
-        providersResults.forEach(p => {
+        let allItems = [];
+        (providersResults || []).forEach(p => {
+            const currentActive = (p.base_url || p.xtream_base_url || (state.providers && state.providers.find(sp => sp.id === p.id)?.xtream_base_url) || '').trim();
             (p.results || []).forEach((uRes, uIdx) => {
-                const isPrimary = (uIdx === 0);
-                const statusClass = uRes.online ? 'online' : 'offline';
-                const statusText = uRes.online ? 'Online' : 'Offline';
-
-                html += `
-                    <tr>
-                        <td>
-                            <strong>${escapeHtml(p.name)}</strong><br>
-                            <span style="font-family:monospace; font-size:0.8rem; color:#cbd5e1;">${escapeHtml(uRes.url)}</span>
-                            ${isPrimary ? '<span class="url-pill active" style="margin-left:6px;">Primary</span>' : '<span class="url-pill" style="margin-left:6px; background:rgba(255,255,255,0.05);">Backup</span>'}
-                        </td>
-                        <td>
-                            <span class="url-pill ${statusClass}">${statusText}</span>
-                        </td>
-                        <td>${uRes.latency_ms > 0 ? uRes.latency_ms + ' ms' : '-'}</td>
-                        <td>
-                            <div>${escapeHtml(uRes.message || '')}</div>
-                            ${uRes.status ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">Status: <strong>${escapeHtml(uRes.status)}</strong> | Exp: <strong>${escapeHtml(uRes.exp_date || 'N/A')}</strong> | Max Conn: <strong>${escapeHtml(uRes.max_connections || '1')}</strong></div>` : ''}
-                        </td>
-                    </tr>
-                `;
+                const isPrimary = currentActive ? (cleanUrl(uRes.url) === cleanUrl(currentActive)) : (uIdx === 0);
+                allItems.push({
+                    providerId: p.id,
+                    providerName: p.name,
+                    url: uRes.url,
+                    online: !!uRes.online,
+                    latency_ms: uRes.latency_ms || 0,
+                    message: uRes.message || '',
+                    status: uRes.status || '',
+                    exp_date: uRes.exp_date || '',
+                    max_connections: uRes.max_connections || '',
+                    categories_count: uRes.categories_count || 0,
+                    isPrimary: isPrimary
+                });
             });
         });
 
+        // Sort: Online servers first, ordered from lowest latency_ms (fastest) to highest (slowest). Offline servers at bottom.
+        allItems.sort((a, b) => {
+            if (a.online && !b.online) return -1;
+            if (!a.online && b.online) return 1;
+            if (a.online && b.online) {
+                const latA = a.latency_ms > 0 ? a.latency_ms : 999999;
+                const latB = b.latency_ms > 0 ? b.latency_ms : 999999;
+                return latA - latB;
+            }
+            return 0;
+        });
+
+        let html = '';
+        allItems.forEach((item) => {
+            const statusClass = item.online ? 'online' : 'offline';
+            const statusText = item.online ? 'Online' : 'Offline';
+
+            let speedBadge = '-';
+            if (item.latency_ms > 0) {
+                if (item.latency_ms < 200) {
+                    speedBadge = `<span style="color:#4ade80; font-weight:700;">⚡ ${item.latency_ms} ms</span>`;
+                } else if (item.latency_ms < 500) {
+                    speedBadge = `<span style="color:#facc15; font-weight:700;">⏱️ ${item.latency_ms} ms</span>`;
+                } else {
+                    speedBadge = `<span style="color:#f87171; font-weight:700;">⏳ ${item.latency_ms} ms</span>`;
+                }
+            }
+
+            let actionHtml = '';
+            if (item.isPrimary) {
+                actionHtml = `<span class="url-pill active" style="font-weight:600; padding:0.35rem 0.65rem;">🌟 Active Server</span>`;
+            } else if (item.online) {
+                actionHtml = `<button type="button" class="btn btn-secondary btn-sm" style="font-weight:600; background:rgba(99,102,241,0.18); border:1px solid rgba(99,102,241,0.45); color:#a5b4fc; cursor:pointer;" onclick="joinServer('${escapeHtml(item.url)}', '${escapeHtml(item.providerId)}')">⚡ Switch / Join</button>`;
+            } else {
+                actionHtml = `<span style="color:var(--text-muted); font-size:0.8rem;">Offline</span>`;
+            }
+
+            html += `
+                <tr>
+                    <td>
+                        <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                            <strong>${escapeHtml(item.providerName)}</strong>
+                            ${item.isPrimary ? '<span class="url-pill active" style="font-size:0.65rem;">Active Primary</span>' : '<span class="url-pill" style="font-size:0.65rem; background:rgba(255,255,255,0.05);">Backup</span>'}
+                        </div>
+                        <div style="font-family:monospace; font-size:0.8rem; color:#cbd5e1; margin-top:2px;">${escapeHtml(item.url)}</div>
+                    </td>
+                    <td>
+                        <span class="url-pill ${statusClass}">${statusText}</span>
+                    </td>
+                    <td>${speedBadge}</td>
+                    <td>
+                        <div>${escapeHtml(item.message || '')}</div>
+                        ${item.status ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">Status: <strong>${escapeHtml(item.status)}</strong> | Exp: <strong>${escapeHtml(item.exp_date || 'N/A')}</strong> | Max Conn: <strong>${escapeHtml(item.max_connections || '1')}</strong></div>` : ''}
+                    </td>
+                    <td style="text-align: right; white-space: nowrap;">
+                        ${actionHtml}
+                    </td>
+                </tr>
+            `;
+        });
+
         tbody.innerHTML = html;
+    }
+
+    async function joinServer(targetUrl, providerId) {
+        if (!targetUrl) return;
+        if (!confirm(`Switch active IPTV provider server to:\n${targetUrl}\n\nStreams and live channels will immediately route through this server.`)) {
+            return;
+        }
+
+        showToast(`Switching active server to ${targetUrl}...`, 'info');
+        try {
+            const res = await fetch('/admin/api/provider/rotate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: targetUrl, provider_id: providerId })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || data.message || 'HTTP ' + res.status);
+
+            showToast(data.message || `Switched server to ${targetUrl}`, 'success');
+
+            // Refresh providers and update state
+            await loadProviders();
+
+            // Update test breakdown table to reflect new active server
+            if (window.lastTestBreakdown) {
+                renderTestBreakdown(window.lastTestBreakdown);
+            }
+
+            // In background, refresh categories so stream IDs match
+            loadCategories();
+        } catch (e) {
+            showToast('Error switching server: ' + e.message, 'error');
+        }
     }
 
     async function loadCategories() {
@@ -2647,7 +2787,7 @@
         }
 
         let tableHtml = `
-            <div class="table-responsive desktop-only">
+            <div class="table-responsive">
                 <table class="url-list-table">
                     <thead>
                         <tr>
@@ -2662,8 +2802,6 @@
                     <tbody>
         `;
 
-        let cardsHtml = `<div class="user-cards-grid mobile-only">`;
-
         state.users.forEach((u, idx) => {
             const isDefault = (u.username === state.defaultUser);
             const isUnlimited = (u.max_connections <= 0);
@@ -2675,10 +2813,9 @@
             
             const isEnabled = u.enabled !== false;
             const pwdInputId = `userPwd_${idx}`;
-            const pwdInputIdMobile = `userPwdMob_${idx}`;
 
             tableHtml += `
-                <tr>
+                <tr id="userRow_${idx}">
                     <td>
                         <strong style="font-size:0.95rem; color:#fff;">${escapeHtml(u.username)}</strong>
                         ${isDefault ? '<span class="url-pill active" style="margin-left:8px; font-size:0.7rem;">Default Admin</span>' : ''}
@@ -2699,52 +2836,56 @@
                             </span>
                         </label>
                     </td>
-                    <td style="text-align:right;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openUserModal(${idx})">✏️ Edit</button>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx})">✏️ Edit</button>
                         <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger);" onclick="deleteUser('${u.id}', '${escapeHtml(u.username)}')">🗑️</button>
                     </td>
                 </tr>
-            `;
-
-            cardsHtml += `
-                <div class="user-card-item">
-                    <div class="user-card-header">
-                        <div style="display:flex; align-items:center; gap:0.5rem;">
-                            <span style="font-size:1.15rem;">👤</span>
-                            <div>
-                                <strong style="font-size:1.05rem; color:#fff;">${escapeHtml(u.username)}</strong>
-                                ${isDefault ? '<span class="url-pill active" style="margin-left:6px; font-size:0.65rem;">Default</span>' : ''}
+                <tr id="userInlineEditRow_${idx}" style="display:none; background: rgba(15, 23, 42, 0.55);">
+                    <td colspan="6" style="padding: 0.85rem 1rem; border-bottom: 2px solid var(--border); border-top: 1px dashed rgba(99, 102, 241, 0.35);">
+                        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 1.15rem; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+                                <div style="font-weight: 600; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 0.5rem;">
+                                    ✏️ Edit User Account: <span style="color: var(--primary); font-family: monospace; font-size: 1rem;">${escapeHtml(u.username)}</span>
+                                    ${isDefault ? '<span class="url-pill active" style="font-size:0.65rem;">Default Admin</span>' : ''}
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx}, false)" title="Close">&times;</button>
                             </div>
+                            <form onsubmit="event.preventDefault(); saveUserInline(${idx});">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: flex-end;">
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Username</label>
+                                        <input type="text" id="inlineUser_${idx}" value="${escapeHtml(u.username)}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Password</label>
+                                        <div class="input-wrapper">
+                                            <input type="password" id="inlinePass_${idx}" value="${escapeHtml(u.password)}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
+                                            <button type="button" class="toggle-pwd" onclick="togglePasswordVisibility('inlinePass_${idx}')">👁️</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label style="font-size:0.8rem; margin-bottom:0.35rem;">Max Concurrent Streams</label>
+                                        <input type="number" id="inlineMax_${idx}" min="0" max="100" value="${u.max_connections !== undefined ? u.max_connections : 0}" required style="font-size:0.9rem; padding:0.45rem 0.65rem;">
+                                        <span style="font-size:0.72rem; color:var(--text-muted); margin-top:2px; display:block;">Enter <code>0</code> for unlimited</span>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0; display:flex; align-items:center; height:38px;">
+                                        <label class="switch-toggle" style="margin:0;">
+                                            <input type="checkbox" id="inlineEnabled_${idx}" ${isEnabled ? 'checked' : ''}>
+                                            <span style="font-size:0.85rem; font-weight:600; color:${isEnabled ? 'var(--success)' : 'var(--text-muted)'};">
+                                                Account Enabled
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.06);">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx}, false)">Cancel</button>
+                                    <button type="submit" class="btn btn-sm">💾 Save Changes</button>
+                                </div>
+                            </form>
                         </div>
-                        <label class="switch-toggle">
-                            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleUserEnabled(${idx})">
-                            <span style="font-size:0.8rem; color:${isEnabled ? 'var(--success)' : 'var(--text-muted)'}; font-weight:600;">
-                                ${isEnabled ? 'Active' : 'Disabled'}
-                            </span>
-                        </label>
-                    </div>
-                    <div class="user-card-meta">
-                        <div class="user-card-meta-row">
-                            <span>Password</span>
-                            <div style="display:inline-flex; align-items:center; gap:0.35rem;">
-                                <input type="password" id="${pwdInputIdMobile}" value="${escapeHtml(u.password)}" readonly style="background:var(--bg-input); border:1px solid var(--border); border-radius:4px; color:#cbd5e1; font-size:0.8rem; padding:0.25rem 0.5rem; width:110px; font-family:monospace;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="togglePasswordVisibility('${pwdInputIdMobile}')">👁️</button>
-                            </div>
-                        </div>
-                        <div class="user-card-meta-row">
-                            <span>Max Concurrent Sessions</span>
-                            <span>${limitText}</span>
-                        </div>
-                        <div class="user-card-meta-row">
-                            <span>Stream Status</span>
-                            <span>${activeBadge}</span>
-                        </div>
-                    </div>
-                    <div class="user-card-actions">
-                        <button type="button" class="btn btn-secondary btn-sm" style="flex:1;" onclick="openUserModal(${idx})">✏️ Edit Account</button>
-                        <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger); padding:0.4rem 0.85rem;" onclick="deleteUser('${u.id}', '${escapeHtml(u.username)}')">🗑️</button>
-                    </div>
-                </div>
+                    </td>
+                </tr>
             `;
         });
 
@@ -2753,42 +2894,135 @@
                 </table>
             </div>
         `;
-        cardsHtml += `</div>`;
 
-        container.innerHTML = tableHtml + cardsHtml;
+        container.innerHTML = tableHtml;
+    }
+
+    function toggleUserInlineEdit(idx, force) {
+        const row = document.getElementById(`userInlineEditRow_${idx}`);
+        if (!row) return;
+        const shouldOpen = (force !== undefined) ? force : (row.style.display === 'none');
+
+        if (shouldOpen) {
+            document.querySelectorAll('[id^="userInlineEditRow_"]').forEach(r => {
+                r.style.display = 'none';
+            });
+            row.style.display = 'table-row';
+            const input = document.getElementById(`inlineUser_${idx}`);
+            if (input) input.focus();
+        } else {
+            row.style.display = 'none';
+        }
+    }
+
+    async function saveUserInline(idx) {
+        if (!state.users || !state.users[idx]) return;
+        const u = state.users[idx];
+        const username = (document.getElementById(`inlineUser_${idx}`).value || '').trim();
+        const password = document.getElementById(`inlinePass_${idx}`).value;
+        const maxConns = parseInt(document.getElementById(`inlineMax_${idx}`).value, 10) || 0;
+        const enabled = document.getElementById(`inlineEnabled_${idx}`).checked;
+
+        if (!username) {
+            showToast('Username is required', 'warning');
+            return;
+        }
+        if (!password) {
+            showToast('Password is required', 'warning');
+            return;
+        }
+
+        const payload = {
+            id: u.id || '',
+            username: username,
+            password: password,
+            max_connections: maxConns,
+            enabled: enabled
+        };
+
+        try {
+            const res = await fetch('/admin/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+
+            showToast(data.message || `User ${username} saved successfully!`, 'success');
+            await loadUsers();
+        } catch (e) {
+            showToast('Error saving user: ' + e.message, 'error');
+        }
+    }
+
+    function toggleAddUserInline(show) {
+        const box = document.getElementById('inlineAddUserBox');
+        if (!box) return;
+        const isVisible = (show !== undefined) ? show : (box.style.display === 'none');
+        box.style.display = isVisible ? 'block' : 'none';
+        if (isVisible) {
+            document.getElementById('newInlineUsername').value = '';
+            document.getElementById('newInlinePassword').value = '';
+            document.getElementById('newInlineMaxConns').value = '0';
+            document.getElementById('newInlineEnabled').checked = true;
+            document.getElementById('newInlineUsername').focus();
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    async function saveNewUserInline() {
+        const username = (document.getElementById('newInlineUsername').value || '').trim();
+        const password = document.getElementById('newInlinePassword').value;
+        const maxConns = parseInt(document.getElementById('newInlineMaxConns').value, 10) || 0;
+        const enabled = document.getElementById('newInlineEnabled').checked;
+
+        if (!username) {
+            showToast('Username is required', 'warning');
+            return;
+        }
+        if (!password) {
+            showToast('Password is required', 'warning');
+            return;
+        }
+
+        const payload = {
+            id: '',
+            username: username,
+            password: password,
+            max_connections: maxConns,
+            enabled: enabled
+        };
+
+        try {
+            const res = await fetch('/admin/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+
+            showToast(data.message || `User ${username} created successfully!`, 'success');
+            toggleAddUserInline(false);
+            await loadUsers();
+        } catch (e) {
+            showToast('Error creating user: ' + e.message, 'error');
+        }
     }
 
     function openUserModal(index) {
-        const modal = document.getElementById('userModal');
-        const title = document.getElementById('userModalTitle');
-        const idInput = document.getElementById('modalUserId');
-        const userInput = document.getElementById('modalUsername');
-        const passInput = document.getElementById('modalUserPassword');
-        const maxInput = document.getElementById('modalUserMaxConns');
-        const enabledInput = document.getElementById('modalUserEnabled');
-
-        if (index >= 0 && state.users[index]) {
-            const u = state.users[index];
-            title.innerText = 'Edit User Account';
-            idInput.value = u.id || '';
-            userInput.value = u.username || '';
-            passInput.value = u.password || '';
-            maxInput.value = u.max_connections !== undefined ? u.max_connections : 1;
-            enabledInput.checked = (u.enabled !== false);
+        if (index >= 0 && state.users && state.users[index]) {
+            toggleUserInlineEdit(index, true);
         } else {
-            title.innerText = 'Add User Account';
-            idInput.value = '';
-            userInput.value = '';
-            passInput.value = '';
-            maxInput.value = '1';
-            enabledInput.checked = true;
+            toggleAddUserInline(true);
         }
-
-        modal.classList.add('open');
     }
 
     function closeUserModal() {
-        document.getElementById('userModal').classList.remove('open');
+        const modal = document.getElementById('userModal');
+        if (modal) modal.classList.remove('open');
+        toggleAddUserInline(false);
     }
 
     async function saveUserFromModal() {

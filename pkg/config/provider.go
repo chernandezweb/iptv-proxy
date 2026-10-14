@@ -537,47 +537,103 @@ func (p *Provider) GetAllURLs() []string {
 
 // SetActiveURL updates the primary active URL and rotates old active into backup list.
 func (p *Provider) SetActiveURL(newURL string) error {
+	return p.SetActiveURLForProvider("", newURL)
+}
+
+// SetActiveURLForProvider updates the active URL for a specific provider (or matching provider) and persists it.
+func (p *Provider) SetActiveURLForProvider(providerID string, newURL string) error {
 	p.Lock()
 	defer p.Unlock()
 
 	newClean := CleanURL(newURL)
-	if newClean == "" || newClean == p.Data.XtreamBaseURL {
+	if newClean == "" {
 		return nil
 	}
 
-	oldActive := p.Data.XtreamBaseURL
-	p.Data.XtreamBaseURL = newClean
-
-	// Automatically update referer to match active URL
-	p.Data.Referer = newClean
-
-	// Rebuild backup URLs so old active is retained in pool
-	var newBackups []string
-	seen := make(map[string]bool)
-	seen[newClean] = true
-
-	if oldActive != "" && !seen[oldActive] {
-		newBackups = append(newBackups, oldActive)
-		seen[oldActive] = true
-	}
-
-	for _, b := range p.Data.BackupURLs {
-		cb := CleanURL(b)
-		if cb != "" && !seen[cb] {
-			newBackups = append(newBackups, cb)
-			seen[cb] = true
+	targetProvIdx := -1
+	if providerID != "" {
+		for i := range p.Data.Providers {
+			if p.Data.Providers[i].ID == providerID {
+				targetProvIdx = i
+				break
+			}
 		}
 	}
-	p.Data.BackupURLs = newBackups
-
-	// Sync with active provider item in multi-provider list so all URLs remain in pool
-	for i := range p.Data.Providers {
-		if p.Data.Providers[i].Enabled {
-			p.Data.Providers[i].XtreamBaseURL = newClean
-			p.Data.Providers[i].BackupURLs = newBackups
-			p.Data.Providers[i].Referer = newClean
-			break
+	if targetProvIdx == -1 {
+		for i := range p.Data.Providers {
+			if CleanURL(p.Data.Providers[i].XtreamBaseURL) == newClean {
+				targetProvIdx = i
+				break
+			}
+			for _, b := range p.Data.Providers[i].BackupURLs {
+				if CleanURL(b) == newClean {
+					targetProvIdx = i
+					break
+				}
+			}
+			if targetProvIdx != -1 {
+				break
+			}
 		}
+	}
+	if targetProvIdx == -1 {
+		for i := range p.Data.Providers {
+			if p.Data.Providers[i].Enabled {
+				targetProvIdx = i
+				break
+			}
+		}
+	}
+
+	if targetProvIdx != -1 {
+		oldProvActive := CleanURL(p.Data.Providers[targetProvIdx].XtreamBaseURL)
+		p.Data.Providers[targetProvIdx].XtreamBaseURL = newClean
+		p.Data.Providers[targetProvIdx].Referer = newClean
+
+		var provBackups []string
+		provSeen := make(map[string]bool)
+		provSeen[newClean] = true
+		if oldProvActive != "" && oldProvActive != newClean {
+			provBackups = append(provBackups, oldProvActive)
+			provSeen[oldProvActive] = true
+		}
+		for _, b := range p.Data.Providers[targetProvIdx].BackupURLs {
+			cb := CleanURL(b)
+			if cb != "" && !provSeen[cb] {
+				provBackups = append(provBackups, cb)
+				provSeen[cb] = true
+			}
+		}
+		p.Data.Providers[targetProvIdx].BackupURLs = provBackups
+
+		// If this is the active/primary provider, sync top-level
+		if targetProvIdx == 0 || p.Data.XtreamBaseURL == oldProvActive || p.Data.XtreamBaseURL == "" {
+			p.Data.XtreamBaseURL = newClean
+			p.Data.Referer = newClean
+			p.Data.BackupURLs = provBackups
+		}
+	} else {
+		oldActive := p.Data.XtreamBaseURL
+		p.Data.XtreamBaseURL = newClean
+		p.Data.Referer = newClean
+
+		var newBackups []string
+		seen := make(map[string]bool)
+		seen[newClean] = true
+
+		if oldActive != "" && oldActive != newClean && !seen[oldActive] {
+			newBackups = append(newBackups, oldActive)
+			seen[oldActive] = true
+		}
+
+		for _, b := range p.Data.BackupURLs {
+			cb := CleanURL(b)
+			if cb != "" && !seen[cb] {
+				newBackups = append(newBackups, cb)
+				seen[cb] = true
+			}
+		}
+		p.Data.BackupURLs = newBackups
 	}
 
 	bytes, err := json.MarshalIndent(p.Data, "", "  ")

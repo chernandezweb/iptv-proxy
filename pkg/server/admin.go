@@ -177,7 +177,9 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 				catID := fmt.Sprint(cat.ID)
 				if provIdx > 0 {
 					if num, errP := strconv.Atoi(catID); errP == nil {
-						catID = strconv.Itoa((provIdx * 100000) + num)
+						catID = strconv.Itoa(EncodeVirtualCategoryID(provIdx, num))
+					} else {
+						catID = fmt.Sprintf("p%d_%s", provIdx, catID)
 					}
 				}
 				allLive = append(allLive, CatItem{
@@ -192,7 +194,9 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 				catID := fmt.Sprint(cat.ID)
 				if provIdx > 0 {
 					if num, errP := strconv.Atoi(catID); errP == nil {
-						catID = strconv.Itoa((provIdx * 100000) + num)
+						catID = strconv.Itoa(EncodeVirtualCategoryID(provIdx, num))
+					} else {
+						catID = fmt.Sprintf("p%d_%s", provIdx, catID)
 					}
 				}
 				allVod = append(allVod, CatItem{
@@ -207,7 +211,9 @@ func (c *Config) adminGetCategories(ctx *gin.Context) {
 				catID := fmt.Sprint(cat.ID)
 				if provIdx > 0 {
 					if num, errP := strconv.Atoi(catID); errP == nil {
-						catID = strconv.Itoa((provIdx * 100000) + num)
+						catID = strconv.Itoa(EncodeVirtualCategoryID(provIdx, num))
+					} else {
+						catID = fmt.Sprintf("p%d_%s", provIdx, catID)
 					}
 				}
 				allSeries = append(allSeries, CatItem{
@@ -1098,9 +1104,51 @@ type GluetunDeployReq struct {
 	WireguardAddresses  string `json:"wireguard_addresses"`
 }
 
+func getGluetunHTTPBase() string {
+	candidates := []string{"http://gluetun:8000", "http://127.0.0.1:8000", "http://localhost:8000"}
+	client := &http.Client{Timeout: 1200 * time.Millisecond}
+	for _, ep := range candidates {
+		resp, err := client.Get(ep + "/v1/publicip/ip")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return ep
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+	return ""
+}
+
 func (c *Config) adminGetGluetunStatus(ctx *gin.Context) {
 	client, apiBase, err := getDockerClient()
 	if err != nil {
+		// Check native HTTP control API fallback (:8000)
+		if httpBase := getGluetunHTTPBase(); httpBase != "" {
+			var ipInfo struct {
+				PublicIP string `json:"public_ip"`
+				Country  string `json:"country"`
+				City     string `json:"city"`
+			}
+			hClient := &http.Client{Timeout: 2 * time.Second}
+			if resp, errHTTP := hClient.Get(httpBase + "/v1/publicip/ip"); errHTTP == nil && resp.StatusCode == http.StatusOK {
+				_ = json.NewDecoder(resp.Body).Decode(&ipInfo)
+				resp.Body.Close()
+				ctx.JSON(http.StatusOK, gin.H{
+					"supported": true,
+					"installed": true,
+					"running":   true,
+					"status":    "running",
+					"name":      "gluetun",
+					"public_ip": ipInfo.PublicIP,
+					"country":   ipInfo.Country,
+					"city":      ipInfo.City,
+					"api_mode":  true,
+				})
+				return
+			}
+		}
+
 		ctx.JSON(http.StatusOK, gin.H{
 			"supported": false,
 			"installed": false,

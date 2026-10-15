@@ -203,7 +203,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 					var virtualID string
 					origNum, numErr := strconv.Atoi(origID)
 					if numErr == nil && provIdx > 0 {
-						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+						virtualID = strconv.Itoa(EncodeVirtualStreamID(provIdx, origNum))
 					} else if provIdx > 0 {
 						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
 					} else {
@@ -253,7 +253,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 					var virtualID string
 					origNum, numErr := strconv.Atoi(origID)
 					if numErr == nil && provIdx > 0 {
-						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+						virtualID = strconv.Itoa(EncodeVirtualStreamID(provIdx, origNum))
 					} else if provIdx > 0 {
 						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
 					} else {
@@ -303,7 +303,7 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 					var virtualID string
 					origNum, numErr := strconv.Atoi(origID)
 					if numErr == nil && provIdx > 0 {
-						virtualID = fmt.Sprintf("%d", (provIdx*1000000)+origNum)
+						virtualID = strconv.Itoa(EncodeVirtualStreamID(provIdx, origNum))
 					} else if provIdx > 0 {
 						virtualID = fmt.Sprintf("p%d_%s", provIdx, origID)
 					} else {
@@ -759,7 +759,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 				if provIdx > 0 {
 					origIDStr := fmt.Sprint(cat["category_id"])
 					if num, errParse := strconv.Atoi(origIDStr); errParse == nil {
-						cat["category_id"] = strconv.Itoa((provIdx * 100000) + num)
+						cat["category_id"] = strconv.Itoa(EncodeVirtualCategoryID(provIdx, num))
 					} else {
 						cat["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origIDStr)
 					}
@@ -785,19 +785,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 		}
 
 		if catParam != "" {
-			provIdx := 0
-			origCatID := catParam
-			if num, errParse := strconv.Atoi(catParam); errParse == nil && num >= 100000 {
-				provIdx = num / 100000
-				origCatID = strconv.Itoa(num % 100000)
-			} else if strings.HasPrefix(catParam, "p") && strings.Contains(catParam, "_") {
-				parts := strings.SplitN(catParam, "_", 2)
-				if idx, errParse := strconv.Atoi(parts[0][1:]); errParse == nil {
-					provIdx = idx
-					origCatID = parts[1]
-				}
-			}
-
+			provIdx, origCatID := DecodeVirtualCategoryID(catParam, len(enabled))
 			if provIdx < 0 || provIdx >= len(enabled) {
 				provIdx = 0
 			}
@@ -831,7 +819,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 						var virtualID string
 						origNum, numErr := strconv.Atoi(rawID)
 						if numErr == nil && provIdx > 0 {
-							vNum := (provIdx * 1000000) + origNum
+							vNum := EncodeVirtualStreamID(provIdx, origNum)
 							virtualID = strconv.Itoa(vNum)
 							item[idKey] = vNum
 						} else if provIdx > 0 {
@@ -890,7 +878,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 						var virtualID string
 						origNum, numErr := strconv.Atoi(rawID)
 						if numErr == nil && provIdx > 0 {
-							vNum := (provIdx * 1000000) + origNum
+							vNum := EncodeVirtualStreamID(provIdx, origNum)
 							virtualID = strconv.Itoa(vNum)
 							item[idKey] = vNum
 						} else if provIdx > 0 {
@@ -903,7 +891,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 						if provIdx > 0 {
 							origCatStr := fmt.Sprint(item["category_id"])
 							if origCatNum, errParse := strconv.Atoi(origCatStr); errParse == nil {
-								item["category_id"] = strconv.Itoa((provIdx * 100000) + origCatNum)
+								item["category_id"] = strconv.Itoa(EncodeVirtualCategoryID(provIdx, origCatNum))
 							} else {
 								item["category_id"] = fmt.Sprintf("p%d_%s", provIdx, origCatStr)
 							}

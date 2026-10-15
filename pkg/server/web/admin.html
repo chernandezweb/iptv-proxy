@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <style>
         :root {
             --primary: #6366f1;
@@ -1498,6 +1500,9 @@
                 <button type="button" class="btn btn-secondary" onclick="loadStreams()">
                     🔄 Refresh
                 </button>
+                <button type="button" class="btn" onclick="StreamInspector.promptUrl()" style="display:flex; align-items:center; gap:0.4rem;">
+                    <span>▶</span> Stream Player
+                </button>
             </div>
         </div>
 
@@ -1918,6 +1923,51 @@
 <div class="toast" id="toast">
     <span id="toastIcon">✅</span>
     <span id="toastMsg">Action completed successfully</span>
+</div>
+
+<!-- STREAM INSPECTOR & WEB PLAYER MODAL -->
+<div class="modal-overlay" id="streamInspectorModal" style="display:none;" onclick="if(event.target===this)StreamInspector.close()">
+    <div class="modal-container" style="max-width: 900px; width: 95%;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+                <h3 style="margin:0; font-size:1.15rem; display:flex; align-items:center; gap:0.5rem;" id="inspModalTitle">
+                    📺 Stream Inspector &amp; Web Player
+                </h3>
+                <span id="inspStatusBadge" class="url-pill online" style="font-size:0.75rem;">READY</span>
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="StreamInspector.close()" style="padding:0.35rem 0.65rem;">✕</button>
+        </div>
+        <div class="modal-body" style="padding:0;">
+            <div style="display: grid; grid-template-columns: 1fr 280px; background: #060913; min-height:360px;">
+                <!-- Video Viewport -->
+                <div style="position: relative; background: #000; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                    <video id="inspVideo" controls autoplay playsinline style="width: 100%; height: 100%; max-height:480px;"></video>
+                </div>
+
+                <!-- Real-Time Telemetry Panel -->
+                <div style="padding: 1.15rem; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.75rem; background: var(--bg-card);">
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Protocol</span><br><strong id="inspProto">-</strong></div>
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Video Codec</span><br><strong id="inspVCodec">-</strong></div>
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Audio Codec</span><br><strong id="inspACodec">-</strong></div>
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Resolution / FPS</span><br><strong id="inspRes">-</strong></div>
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Live Bitrate</span><br><strong id="inspBitrate" style="color:#38bdf8;">0.00 Mbps</strong></div>
+                    <div><span style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">Buffer / Dropped</span><br><strong id="inspHealth">0.0s / 0 frames</strong></div>
+                    <div id="inspWarning" style="display:none; padding: 0.6rem; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; color: #fcd34d; font-size: 0.72rem; line-height:1.4;"></div>
+                </div>
+            </div>
+            <!-- Quick URL input bar -->
+            <div style="padding:0.75rem 1.15rem; background:var(--bg-card-subtle); border-top:1px solid var(--border); display:flex; gap:0.5rem; align-items:center;">
+                <input type="text" id="inspCustomUrl" class="form-control" placeholder="Stream URL (e.g. /live/username/password/123.ts or http://...)" style="font-size:0.8rem; font-family:monospace; flex:1;">
+                <button type="button" class="btn" style="padding:0.4rem 0.85rem; font-size:0.82rem;" onclick="StreamInspector.open(document.getElementById('inspCustomUrl').value, 'Custom Stream')">▶ Play</button>
+            </div>
+        </div>
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:0.78rem; color:var(--text-muted);">
+                Powered by mpegts.js &amp; hls.js with native MSE demuxing
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="StreamInspector.close()">Close</button>
+        </div>
+    </div>
 </div>
 
 <!-- UPDATE MODAL -->
@@ -3273,6 +3323,7 @@
                                     <th>Client IPs Sharing Stream</th>
                                     <th>Duration</th>
                                     <th>Status</th>
+                                    <th style="text-align:right;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -3286,6 +3337,11 @@
                         <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(ips)}</code></td>
                         <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(r.duration || '0s')}</span></td>
                         <td><span class="url-pill online"><span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Multiplexed</span></td>
+                        <td style="text-align:right;">
+                            <button type="button" class="btn btn-secondary" style="padding:0.25rem 0.65rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="StreamInspector.inspectRelay('${escapeHtml(r.key || r.url)}')">
+                                <span>▶</span> Inspect
+                            </button>
+                        </td>
                     </tr>
                 `;
             });
@@ -3308,6 +3364,7 @@
                                     <th>Channel / Stream URI</th>
                                     <th>Duration</th>
                                     <th>Status</th>
+                                    <th style="text-align:right;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -3321,13 +3378,21 @@
                         <td><strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</strong></td>
                         <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(s.duration || '0s')}</span></td>
                         <td><span class="url-pill online"><span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Streaming</span></td>
+                        <td style="text-align:right;">
+                            <button type="button" class="btn btn-secondary" style="padding:0.25rem 0.65rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}')">
+                                <span>▶</span> Inspect
+                            </button>
+                        </td>
                     </tr>
                 `;
                 cardsHtml += `
                     <div class="stream-card-item">
                         <div class="stream-card-header">
                             <strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong>
-                            <span class="url-pill online"><span class="status-dot" style="background:var(--success); width:6px; height:6px;"></span> Streaming</span>
+                            <div style="display:flex; align-items:center; gap:0.4rem;">
+                                <span class="url-pill online"><span class="status-dot" style="background:var(--success); width:6px; height:6px;"></span> Streaming</span>
+                                <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.72rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}')">▶</button>
+                            </div>
                         </div>
                         <div class="stream-card-meta">
                             <div class="stream-card-meta-row"><span>Client IP</span><code>${escapeHtml(s.ip || 'Unknown')}</code></div>
@@ -4422,6 +4487,204 @@ services:<br>
             await fetchLogs();
         }
     }
+
+    // --- Stream Inspector & Web Player Engine (mpegts.js & hls.js) ---
+    const StreamInspector = (() => {
+        let tsPlayer = null;
+        let hlsPlayer = null;
+        let statsTimer = null;
+
+        const el = (id) => document.getElementById(id);
+
+        function resetUI(title, protocol) {
+            el('inspModalTitle').textContent = `📺 ` + (title || 'Stream Inspector');
+            el('inspProto').textContent = protocol;
+            el('inspVCodec').textContent = 'Probing MSE buffer...';
+            el('inspACodec').textContent = 'Probing audio...';
+            el('inspRes').textContent = '-';
+            el('inspBitrate').textContent = '0.00 Mbps';
+            el('inspHealth').textContent = '0.0s / 0 frames';
+            el('inspWarning').style.display = 'none';
+            setStatus('BUFFERING', '#0284c7');
+        }
+
+        function setStatus(text, bg) {
+            const s = el('inspStatusBadge');
+            if (s) {
+                s.textContent = text;
+                s.style.background = bg;
+            }
+        }
+
+        function checkAudioWarning(audioCodec) {
+            if (!audioCodec) return;
+            const lower = audioCodec.toLowerCase();
+            if (lower.includes('ac-3') || lower.includes('ac3') || lower.includes('eac3') || lower.includes('mp2')) {
+                const warn = el('inspWarning');
+                if (warn) {
+                    warn.style.display = 'block';
+                    warn.innerHTML = `⚠️ <strong>Audio Notice:</strong> Stream uses <code>${escapeHtml(audioCodec)}</code> broadcast audio. Stream is 100% healthy, but browser MSE software decoding may mute audio without hardware Dolby pass-through.`;
+                }
+            }
+        }
+
+        function promptUrl() {
+            const modal = el('streamInspectorModal');
+            if (modal) {
+                modal.style.display = 'flex';
+                el('inspCustomUrl').focus();
+            }
+        }
+
+        function inspectRelay(key) {
+            let streamUrl = key;
+            if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
+                const user = (state.users && state.users.length > 0) ? state.users[0].username : 'admin';
+                const pass = (state.users && state.users.length > 0) ? state.users[0].password : 'admin';
+                const cleanKey = key.startsWith('/') ? key : '/' + key;
+                if (cleanKey.includes('/live/') || cleanKey.includes('/movie/') || cleanKey.includes('/series/')) {
+                    streamUrl = window.location.origin + cleanKey;
+                } else {
+                    streamUrl = `${window.location.origin}/live/${encodeURIComponent(user)}/${encodeURIComponent(pass)}${cleanKey}`;
+                }
+            }
+            open(streamUrl, `Relay: ${key}`);
+        }
+
+        function inspectDirect(uri, username) {
+            let streamUrl = uri;
+            if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
+                const user = username || ((state.users && state.users.length > 0) ? state.users[0].username : 'admin');
+                const pass = (state.users && state.users.length > 0) ? state.users[0].password : 'admin';
+                const cleanKey = uri.startsWith('/') ? uri : '/' + uri;
+                if (cleanKey.includes('/live/') || cleanKey.includes('/movie/') || cleanKey.includes('/series/')) {
+                    streamUrl = window.location.origin + cleanKey;
+                } else {
+                    streamUrl = `${window.location.origin}/live/${encodeURIComponent(user)}/${encodeURIComponent(pass)}${cleanKey}`;
+                }
+            }
+            open(streamUrl, `Session: ${username || 'Direct'}`);
+        }
+
+        function open(streamUrl, title) {
+            if (!streamUrl) return;
+            close(false);
+            const modal = el('streamInspectorModal');
+            if (modal) modal.style.display = 'flex';
+            el('inspCustomUrl').value = streamUrl;
+
+            const video = el('inspVideo');
+            const isHLS = streamUrl.includes('.m3u8');
+
+            resetUI(title, isHLS ? 'HLS (M3U8 Manifest)' : 'HTTP MPEG-TS (188B Aligned)');
+
+            if (isHLS && window.Hls && Hls.isSupported()) {
+                hlsPlayer = new Hls({ enableWorker: true, lowLatencyMode: true });
+                hlsPlayer.loadSource(streamUrl);
+                hlsPlayer.attachMedia(video);
+
+                hlsPlayer.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+                    setStatus('PLAYING (HLS)', 'var(--success)');
+                    const level = (data.levels && data.levels[0]) ? data.levels[0] : {};
+                    el('inspVCodec').textContent = level.videoCodec || 'H.264 (AVC)';
+                    el('inspACodec').textContent = level.audioCodec || 'AAC';
+                    checkAudioWarning(level.audioCodec);
+                    video.play().catch(() => {});
+                });
+
+                hlsPlayer.on(Hls.Events.FRAG_LOADED, (_, data) => {
+                    const stats = data.frag.stats;
+                    const durationSec = (stats.loading.end - stats.loading.start) / 1000;
+                    if (durationSec > 0 && stats.total > 0) {
+                        const mbps = ((stats.total * 8) / durationSec / 1e6).toFixed(2);
+                        el('inspBitrate').textContent = `${mbps} Mbps`;
+                    }
+                });
+
+                hlsPlayer.on(Hls.Events.ERROR, (_, data) => {
+                    if (data.fatal) {
+                        setStatus(`ERROR: ${data.details}`, 'var(--danger)');
+                    }
+                });
+            } else if (window.mpegts && mpegts.isSupported()) {
+                try {
+                    tsPlayer = mpegts.createPlayer({
+                        type: 'mse',
+                        isLive: true,
+                        url: streamUrl
+                    }, {
+                        enableWorker: true,
+                        enableStashBuffer: false,
+                        liveBufferLatencyChasing: true,
+                        liveBufferLatencyMaxLatency: 2.5,
+                        liveBufferLatencyMinRemain: 0.5
+                    });
+
+                    tsPlayer.attachMediaElement(video);
+                    tsPlayer.load();
+                    tsPlayer.play().catch(() => {});
+
+                    tsPlayer.on(mpegts.Events.MEDIA_INFO, (info) => {
+                        setStatus('PLAYING (MPEG-TS)', 'var(--success)');
+                        el('inspVCodec').textContent = info.videoCodec || 'H.264 / AVC';
+                        el('inspACodec').textContent = info.audioCodec || 'AC-3 / AAC';
+                        if (info.width && info.height) {
+                            el('inspRes').textContent = `${info.width}x${info.height} @ ${Math.round(info.fps || 0)}fps`;
+                        }
+                        checkAudioWarning(info.audioCodec);
+                    });
+
+                    tsPlayer.on(mpegts.Events.STATISTICS_INFO, (stats) => {
+                        if (stats.speed) {
+                            const mbps = ((stats.speed * 8) / 1024).toFixed(2);
+                            el('inspBitrate').textContent = `${mbps} Mbps`;
+                        }
+                    });
+
+                    tsPlayer.on(mpegts.Events.ERROR, (errType, errDetail) => {
+                        setStatus(`ERR: ${errDetail}`, 'var(--danger)');
+                    });
+                } catch (e) {
+                    video.src = streamUrl;
+                    video.play().catch(() => {});
+                }
+            } else {
+                video.src = streamUrl;
+                video.play().catch(() => {});
+                setStatus('PLAYING (Native)', 'var(--success)');
+            }
+
+            statsTimer = setInterval(() => {
+                if (video.videoWidth && el('inspRes').textContent === '-') {
+                    el('inspRes').textContent = `${video.videoWidth}x${video.videoHeight}`;
+                }
+                let buf = 0;
+                if (video.buffered && video.buffered.length > 0) {
+                    buf = Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime);
+                }
+                const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : {};
+                el('inspHealth').textContent = `${buf.toFixed(1)}s buffer / ${q.droppedVideoFrames || 0} dropped`;
+            }, 1000);
+        }
+
+        function close(hideModal = true) {
+            if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+            if (tsPlayer) { try { tsPlayer.destroy(); } catch(e){} tsPlayer = null; }
+            if (hlsPlayer) { try { hlsPlayer.destroy(); } catch(e){} hlsPlayer = null; }
+            const video = el('inspVideo');
+            if (video) {
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+            }
+            if (hideModal) {
+                const modal = el('streamInspectorModal');
+                if (modal) modal.style.display = 'none';
+            }
+        }
+
+        return { open, close, promptUrl, inspectRelay, inspectDirect };
+    })();
 
     // Initialize on page load
     (async function init() {

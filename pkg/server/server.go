@@ -20,6 +20,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -166,6 +167,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	cfg.chunkCache = newChunkCache(15 * time.Second)
 	cfg.streamHub = newStreamHub()
 	cfg.streamRoutingMap = make(map[string]StreamRoutingTarget)
+	StartTempFileJanitor(context.Background(), 1*time.Hour)
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
@@ -647,11 +649,9 @@ func (c *Config) ResolveTargetStream(streamType string, rawID string) (config.Pr
 		}
 	}
 
-	// 3. Check numeric deterministic offset: (providerIndex * 1,000,000) + id
+	// 3. Check numeric deterministic offset (bit-shifted or legacy format)
 	if num, err := strconv.Atoi(base); err == nil {
-		idx := num / 1000000
-		origNum := num % 1000000
-		if idx >= 0 && idx < len(enabled) {
+		if idx, origNum, ok := DecodeVirtualStreamID(num, len(enabled)); ok {
 			return enabled[idx], fmt.Sprintf("%d%s", origNum, ext)
 		}
 	}

@@ -8,26 +8,60 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	tsPacket   = 188
-	tsSyncByte = 0x47
+	tsPacket        = 188
+	tsSyncByte      = 0x47
+	packetsPerChunk = 70
+	chunkSize       = tsPacket * packetsPerChunk // 13,160 bytes (exact 188-byte TS multiple)
+	subscriberBuf   = 128                        // ~1.68 MB buffer per client
 
-	readBytes  = 64 << 10
-	sniffBytes = tsPacket + 1
-
-	stallTimeout = 20 * time.Second
+	stallTimeout = 8 * time.Second
 	healthyAfter = 10 * time.Second
 )
 
+// RefChunk wraps an aligned byte slice from sync.Pool with atomic reference counting.
+type RefChunk struct {
+	data []byte
+	n    int
+	refs int32
+}
+
+var chunkPool = sync.Pool{
+	New: func() interface{} {
+		return &RefChunk{
+			data: make([]byte, chunkSize),
+		}
+	},
+}
+
+func acquireChunk() *RefChunk {
+	c := chunkPool.Get().(*RefChunk)
+	atomic.StoreInt32(&c.refs, 1)
+	c.n = 0
+	return c
+}
+
+func (c *RefChunk) Retain() {
+	atomic.AddInt32(&c.refs, 1)
+}
+
+func (c *RefChunk) Release() {
+	if atomic.AddInt32(&c.refs, -1) == 0 {
+		chunkPool.Put(c)
+	}
+}
+
 type relaySubscriber struct {
 	ip        string
-	ch        chan []byte
+	ch        chan *RefChunk
 	done      chan struct{}
 	closeOnce sync.Once
 }
@@ -70,7 +104,7 @@ type streamRelay struct {
 
 // StreamHub manages multiplexed live stream relays so multiple devices watching
 // the same channel share a single upstream connection to the IPTV provider,
-// with automatic packet alignment and drop/stall reconnection.
+// with automatic packet alignment, memory-pooled buffers, and drop/stall reconnection.
 type StreamHub struct {
 	mu     sync.Mutex
 	relays map[string]*streamRelay
@@ -115,7 +149,6 @@ func isTS(begin []byte) bool {
 }
 
 // TryPlaySharedStream checks if the stream can be relayed or attached to an existing relay.
-// Returns true if handled by the relay hub.
 func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *http.Client, oriURL *url.URL) bool {
 	// Only apply shared relay to live streams without Range requests (linear live broadcasts)
 	if ctx.Request.Header.Get("Range") != "" {
@@ -166,7 +199,7 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 	// Register this client as a subscriber
 	sub := &relaySubscriber{
 		ip:   ctx.ClientIP(),
-		ch:   make(chan []byte, 256),
+		ch:   make(chan *RefChunk, subscriberBuf),
 		done: make(chan struct{}),
 	}
 
@@ -186,6 +219,18 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 		relay.mu.Unlock()
 
 		sub.close()
+		// Drain unconsumed chunks in channel so they are returned to pool
+		for {
+			select {
+			case chunk := <-sub.ch:
+				if chunk != nil {
+					chunk.Release()
+				}
+			default:
+				goto drained
+			}
+		}
+	drained:
 		log.Printf("[iptv-proxy] Client %s disconnected from %s (Remaining viewers: %d)", ctx.ClientIP(), streamKey, remaining)
 
 		if remaining == 0 {
@@ -218,10 +263,11 @@ func (h *StreamHub) TryPlaySharedStream(ctx *gin.Context, cfg *Config, client *h
 	ctx.Stream(func(w io.Writer) bool {
 		select {
 		case chunk, ok := <-sub.ch:
-			if !ok {
+			if !ok || chunk == nil {
 				return false
 			}
-			_, err := w.Write(chunk)
+			_, err := w.Write(chunk.data[:chunk.n])
+			chunk.Release()
 			return err == nil
 		case <-ctx.Request.Context().Done():
 			return false
@@ -237,7 +283,7 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 	connCtx, connCancel := context.WithCancel(ctx)
 	r.connCancel = connCancel
 
-	resp, err := r.openConn(connCtx, cfg, client)
+	resp, err := r.openConn(connCtx, cfg, client, r.oriURL)
 	if err != nil || (resp != nil && resp.StatusCode >= 400) {
 		if err == nil {
 			err = fmt.Errorf("upstream returned status %d", resp.StatusCode)
@@ -252,8 +298,8 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 		return
 	}
 
-	reader := bufio.NewReaderSize(resp.Body, readBytes)
-	begin, _ := reader.Peek(sniffBytes)
+	reader := bufio.NewReaderSize(resp.Body, chunkSize*2)
+	begin, _ := reader.Peek(tsPacket + 1)
 
 	r.mu.Lock()
 	r.contentType = resp.Header.Get("Content-Type")
@@ -265,29 +311,51 @@ func (r *streamRelay) startUpstream(ctx context.Context, cfg *Config, client *ht
 	r.runStreamLoop(ctx, cfg, client, resp, reader)
 }
 
-func (r *streamRelay) openConn(ctx context.Context, cfg *Config, client *http.Client) (*http.Response, error) {
+func (r *streamRelay) openConn(ctx context.Context, cfg *Config, client *http.Client, targetURL *url.URL) (*http.Response, error) {
 	ginCtx := &gin.Context{
 		Request: (&http.Request{
 			Method: "GET",
-			URL:    r.oriURL,
+			URL:    targetURL,
 			Header: make(http.Header),
 		}).WithContext(ctx),
 	}
-	return cfg.forwardStreamRequest(ginCtx, client, r.oriURL, false)
+	return cfg.forwardStreamRequest(ginCtx, client, targetURL, false)
 }
 
-func (r *streamRelay) broadcast(chunk []byte) bool {
+// broadcast fans out a reference-counted chunk to all active subscribers.
+func (r *streamRelay) broadcast(chunk *RefChunk) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for sub := range r.subscribers {
+		chunk.Retain()
 		select {
 		case sub.ch <- chunk:
 		default:
-			// Client buffer backed up (slow client network) -> drop chunk to avoid lagging other viewers
+			// Client buffer backed up (slow client network) -> drop chunk for this client only to avoid stalling hub
+			chunk.Release()
 		}
 	}
 	return len(r.subscribers) > 0
+}
+
+// broadcastDiscontinuity injects a 188-byte MPEG-TS Adaptation packet with Discontinuity Indicator bit (0x80)
+// so hardware decoders smoothly reset PCR/PTS clocks during mid-stream failover.
+func (r *streamRelay) broadcastDiscontinuity() {
+	chunk := acquireChunk()
+	pkt := chunk.data[:tsPacket]
+	pkt[0] = tsSyncByte // 0x47
+	pkt[1] = 0x1F       // Null/Adaptation PID 0x1FFF
+	pkt[2] = 0xFF
+	pkt[3] = 0x20       // Adaptation field only, no payload
+	pkt[4] = 183        // Adaptation field length
+	pkt[5] = 0x80       // Discontinuity indicator = 1 (bit 7)
+	for i := 6; i < tsPacket; i++ {
+		pkt[i] = 0xFF   // Stuffing bytes
+	}
+	chunk.n = tsPacket
+	r.broadcast(chunk)
+	chunk.Release()
 }
 
 func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *http.Client, initialResp *http.Response, initialReader *bufio.Reader) {
@@ -310,7 +378,6 @@ func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *ht
 		r.mu.Unlock()
 	}()
 
-	buf := make([]byte, readBytes)
 	var partial []byte
 	openedAt := time.Now()
 
@@ -323,7 +390,7 @@ func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *ht
 	})
 	defer watchdog.Stop()
 
-	retries := []time.Duration{0, 500 * time.Millisecond, time.Second, 2 * time.Second, 4 * time.Second}
+	retries := []time.Duration{0, 300 * time.Millisecond, 800 * time.Millisecond, 1500 * time.Millisecond, 3000 * time.Millisecond}
 	attempt := 0
 
 	for {
@@ -333,37 +400,80 @@ func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *ht
 		default:
 		}
 
-		n, readErr := currentReader.Read(buf)
+		chunk := acquireChunk()
+		n, readErr := currentReader.Read(chunk.data)
 		if n > 0 {
 			watchdog.Reset(stallTimeout)
-			chunk := make([]byte, 0, len(partial)+n)
-			chunk = append(chunk, partial...)
-			chunk = append(chunk, buf[:n]...)
-			partial = nil
+			if len(partial) > 0 {
+				// Reassemble partial packet from previous read
+				combined := append(partial, chunk.data[:n]...)
+				partial = nil
+				if r.ts {
+					whole := len(combined) - (len(combined) % tsPacket)
+					partial = append(partial, combined[whole:]...)
+					combined = combined[:whole]
+				}
+				if len(combined) > 0 {
+					pChunk := acquireChunk()
+					copy(pChunk.data, combined)
+					pChunk.n = len(combined)
+					if !r.broadcast(pChunk) {
+						pChunk.Release()
+						chunk.Release()
+						return
+					}
+					pChunk.Release()
+				}
+			} else {
+				if r.ts {
+					whole := n - (n % tsPacket)
+					if whole < n {
+						partial = append(partial, chunk.data[whole:n]...)
+					}
+					chunk.n = whole
+				} else {
+					chunk.n = n
+				}
 
-			if r.ts {
-				whole := len(chunk) - (len(chunk) % tsPacket)
-				partial = append(partial, chunk[whole:]...)
-				chunk = chunk[:whole]
-			}
-
-			if len(chunk) > 0 && !r.broadcast(chunk) {
-				// No subscribers left
-				return
+				if chunk.n > 0 {
+					if !r.broadcast(chunk) {
+						chunk.Release()
+						return
+					}
+				}
 			}
 		}
+		chunk.Release()
 
 		if readErr == nil {
 			continue
 		}
 
-		// Read error / EOF / Drop -> Reconnect while viewers are still watching
+		// Read error / EOF / Drop -> Reconnect or failover across backup URLs while viewers are still waiting
 		_ = currentResp.Body.Close()
 		partial = nil
 		watchdog.Stop()
 
 		if time.Since(openedAt) >= healthyAfter {
 			attempt = 0
+		}
+
+		// Inject MPEG-TS Discontinuity Marker before reconnecting to reset decoders smoothly
+		if r.ts {
+			r.broadcastDiscontinuity()
+		}
+
+		// Collect backup URLs for hot-swap failover
+		candidateURLs := []*url.URL{r.oriURL}
+		if cfg != nil {
+			for _, bURLStr := range cfg.GetAllProviderURLs() {
+				if bParsed, errP := url.Parse(bURLStr); errP == nil && bParsed.Host != r.oriURL.Host {
+					newURL := *r.oriURL
+					newURL.Scheme = bParsed.Scheme
+					newURL.Host = bParsed.Host
+					candidateURLs = append(candidateURLs, &newURL)
+				}
+			}
 		}
 
 		reconnected := false
@@ -391,17 +501,19 @@ func (r *streamRelay) runStreamLoop(ctx context.Context, cfg *Config, client *ht
 			newConnCtx, newConnCancel := context.WithCancel(ctx)
 			r.connCancel = newConnCancel
 
-			log.Printf("[iptv-proxy] Upstream dropped for %s, attempt %d/%d to reconnect...", r.streamKey, attempt, len(retries))
-			newResp, newErr := r.openConn(newConnCtx, cfg, client)
+			// Try candidate URLs in rotation
+			targetDialURL := candidateURLs[(attempt-1)%len(candidateURLs)]
+			log.Printf("[iptv-proxy] Upstream dropped for %s, attempt %d/%d reconnecting to %s...", r.streamKey, attempt, len(retries), targetDialURL.Host)
+			newResp, newErr := r.openConn(newConnCtx, cfg, client, targetDialURL)
 			if newErr == nil && newResp != nil && newResp.StatusCode == http.StatusOK {
 				currentResp = newResp
-				currentReader = bufio.NewReaderSize(newResp.Body, readBytes)
+				currentReader = bufio.NewReaderSize(newResp.Body, chunkSize*2)
 				openedAt = time.Now()
 				watchdog.Reset(stallTimeout)
 				r.mu.Lock()
 				r.reconnections++
 				r.mu.Unlock()
-				log.Printf("[iptv-proxy] Shared stream for %s reconnected successfully! Viewers unaffected.", r.streamKey)
+				log.Printf("[iptv-proxy] Shared stream for %s reconnected successfully via %s! Viewers unaffected.", r.streamKey, targetDialURL.Host)
 				reconnected = true
 				break
 			}

@@ -17,6 +17,7 @@ services:
       PORT: 8080
       DATA_DIR: "/data"
       GIN_MODE: release
+      GOMEMLIMIT: "512MiB"
       # Initial fallback credentials (can also be customized in .env or Web UI -> Users)
       # Uses ADMIN_USER / ADMIN_PASSWORD to avoid collision with Linux system $USER variable (e.g. root)
       USER: "${ADMIN_USER:-admin}"

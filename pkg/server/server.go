@@ -266,7 +266,19 @@ func (c *Config) Serve() error {
 		return err
 	}
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{
+			"/admin/api/logs",
+			"/admin/api/streams",
+			"/admin/api/vpn-proxy",
+			"/admin/api/gluetun/status",
+			"/admin/api/users",
+			"/admin/api/admin-auth",
+			"/admin/api/version",
+		},
+	}))
 	router.Use(cors.Default())
 	group := router.Group("/")
 	c.routes(group)

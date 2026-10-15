@@ -46,9 +46,10 @@
         }
 
         .container {
-            max-width: 1080px;
+            max-width: 1380px;
+            width: 95%;
             margin: 0 auto;
-            padding: 2.5rem 1.5rem;
+            padding: 2rem 1.5rem;
         }
 
         header {
@@ -202,16 +203,9 @@
         .tabs-scroll-track {
             display: flex;
             align-items: center;
-            gap: 0.35rem;
-            overflow-x: auto;
-            scrollbar-width: none; /* Hide scrollbar Firefox */
-            -ms-overflow-style: none; /* Hide scrollbar IE/Edge */
-            -webkit-overflow-scrolling: touch;
-            padding: 0.1rem;
-        }
-
-        .tabs-scroll-track::-webkit-scrollbar {
-            display: none; /* Hide scrollbar Chrome/Safari/Brave */
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            padding: 0.15rem;
         }
 
         .tab {
@@ -537,11 +531,16 @@
         }
 
         .list-container {
-            max-height: 520px;
+            max-height: 68vh;
             overflow-y: auto;
             border: 1px solid var(--border);
             border-radius: var(--radius);
             background-color: var(--bg-input);
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 8px;
+            padding: 12px;
+            align-content: start;
         }
 
         .list-container::-webkit-scrollbar {
@@ -560,34 +559,180 @@
         .category-item {
             display: flex;
             align-items: center;
-            padding: 0.85rem 1.15rem;
-            border-bottom: 1px solid var(--border);
-            transition: background-color 0.15s;
+            justify-content: space-between;
+            padding: 0.65rem 0.85rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(30, 41, 59, 0.45);
+            transition: all 0.15s ease;
             cursor: pointer;
             user-select: none;
-        }
-
-        .category-item:last-child {
-            border-bottom: none;
+            min-height: 44px;
         }
 
         .category-item:hover {
-            background-color: rgba(99, 102, 241, 0.05);
+            background-color: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        .category-item.is-checked {
+            background-color: rgba(99, 102, 241, 0.18);
+            border-color: rgba(99, 102, 241, 0.55);
         }
 
         .category-item input[type="checkbox"] {
-            margin-right: 1rem;
-            width: 1.2rem;
-            height: 1.2rem;
+            margin-right: 0.65rem;
+            width: 1.15rem;
+            height: 1.15rem;
             accent-color: var(--primary);
             cursor: pointer;
+            flex-shrink: 0;
         }
 
         .category-item label {
             cursor: pointer;
             flex: 1;
-            font-size: 0.9rem;
+            font-size: 0.84rem;
             font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Quality & Codec Badges */
+        .cat-badges {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+            margin-left: 6px;
+        }
+
+        .cat-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 4px;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+
+        .badge-4k     { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .badge-hevc   { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+        .badge-raw    { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+        .badge-dolby  { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
+        .badge-prefix { background: #334155; color: #e2e8f0; margin-right: 4px; }
+
+        /* Segmented Radio Control */
+        .segmented-control {
+            display: inline-flex;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 3px;
+            gap: 3px;
+        }
+
+        .seg-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.5rem 0.95rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .seg-btn:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .seg-btn.active {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        /* VPN Pipeline Visualization */
+        .vpn-pipeline-card {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.15rem 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 1.25rem;
+        }
+
+        .pipeline-node {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .pipeline-icon {
+            font-size: 1.5rem;
+            line-height: 1;
+        }
+
+        .pipeline-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .pipeline-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .pipeline-val {
+            font-size: 0.95rem;
+            font-family: monospace;
+            color: var(--text);
+        }
+
+        .pipeline-arrow {
+            color: #6366f1;
+            font-size: 1.15rem;
+            font-weight: bold;
+            opacity: 0.75;
+        }
+
+        /* Sticky Save Bar */
+        .sticky-save-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(120px);
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--primary);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.35);
+            border-radius: 50px;
+            padding: 0.6rem 1.4rem;
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            z-index: 1000;
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .sticky-save-bar.visible {
+            transform: translateX(-50%) translateY(0);
         }
 
         .alert-banner {
@@ -1170,17 +1315,18 @@
         </div>
 
         <!-- Active Protections Summary Card -->
-        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-bottom: 1.5rem;">
-            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
-                🛡️ High-Concurrency &amp; Anti-Blocking Engine Active (12+ Devices)
-            </h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
+        <details style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 0.85rem 1.15rem; margin-bottom: 1.5rem;">
+            <summary style="font-size: 0.9rem; color: #a5b4fc; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                <span style="display:flex; align-items:center; gap:0.4rem;">🛡️ High-Concurrency &amp; Anti-Blocking Engine Active (12+ Devices)</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); opacity: 0.75;">(Click to expand)</span>
+            </summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed rgba(99, 102, 241, 0.25);">
                 <div>🔒 <strong>IP Leak Shield:</strong> Strips <code>X-Forwarded-For</code> &amp; client IP headers. Upstream providers only see VPS IP.</div>
                 <div>⚡ <strong>Direct 1:1 Streaming:</strong> Pristine TS/HLS direct streaming with zero buffering delay and full TiviMate compatibility.</div>
                 <div>⚡ <strong>HLS RAM Cache:</strong> In-memory chunk cache eliminates duplicate segment downloads across devices.</div>
                 <div>🚀 <strong>Connection Pooling:</strong> Tuned 128-conn Keep-Alive pool with zero-allocation 128KB buffers.</div>
             </div>
-        </div>
+        </details>
 
         <!-- Detailed URL Health Results Card -->
         <div id="testResultCard" class="pool-card" style="display: none; margin-bottom: 1.5rem;">
@@ -1377,40 +1523,42 @@
 
     <!-- USERS TAB -->
     <div id="usersTab" class="tab-content">
-        <!-- Web Admin Platform Credentials Card -->
-        <div style="background:var(--bg-card); border:1px solid rgba(99, 102, 241, 0.4); border-radius:var(--radius); padding:1.25rem; margin-bottom:2rem; box-shadow:0 4px 20px rgba(0,0,0,0.25);">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
-                <div>
-                    <h3 style="margin:0 0 0.25rem 0; font-size:1.15rem; font-weight:700; display:flex; align-items:center; gap:0.5rem; color:#fff;">
-                        🔐 Web Admin Platform Credentials
-                    </h3>
-                    <p class="subtitle" style="margin:0; font-size:0.85rem;">
-                        The username &amp; password required to log in to this web admin management panel (<code>/admin/</code>).
-                    </p>
-                </div>
-            </div>
+        <!-- Web Admin Platform Credentials Card (Collapsible) -->
+        <details style="background:var(--bg-card); border:1px solid rgba(99, 102, 241, 0.4); border-radius:var(--radius); padding:0.9rem 1.25rem; margin-bottom:1.5rem; box-shadow:0 4px 20px rgba(0,0,0,0.25);">
+            <summary style="font-weight:700; font-size:1.05rem; cursor:pointer; display:flex; align-items:center; justify-content:space-between; color:#fff; user-select:none;">
+                <span style="display:flex; align-items:center; gap:0.5rem;">
+                    🔐 Web Admin Platform Credentials
+                    <span style="font-size:0.75rem; font-weight:normal; color:var(--text-muted);">(Click to change panel login password)</span>
+                </span>
+                <span style="font-size:0.8rem; color:var(--primary); font-weight:600;">Configure ⚙️</span>
+            </summary>
             
-            <form id="adminAuthForm" onsubmit="saveAdminCredentials(event)" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)) auto; gap:1rem; align-items:flex-end;">
-                <div class="form-group" style="margin:0;">
-                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">Admin Username</label>
-                    <input type="text" id="adminAuthUser" required placeholder="admin" style="background:#0b0f19;">
-                </div>
-                <div class="form-group" style="margin:0; position:relative;">
-                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">New Admin Password</label>
-                    <div style="position:relative;">
-                        <input type="password" id="adminAuthPass" required placeholder="Enter new admin password" style="background:#0b0f19; padding-right:2.5rem;">
-                        <button type="button" onclick="togglePasswordVisibility('adminAuthPass')" style="position:absolute; right:0.5rem; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1rem; padding:0.25rem;">👁️</button>
+            <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border);">
+                <p class="subtitle" style="margin:0 0 1rem 0; font-size:0.85rem;">
+                    The username &amp; password required to log in to this web admin management panel (<code>/admin/</code>).
+                </p>
+                <form id="adminAuthForm" onsubmit="saveAdminCredentials(event)" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)) auto; gap:1rem; align-items:flex-end;">
+                    <div class="form-group" style="margin:0;">
+                        <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">Admin Username</label>
+                        <input type="text" id="adminAuthUser" required placeholder="admin" style="background:#0b0f19;">
                     </div>
-                </div>
-                <div>
-                    <button type="submit" class="btn" id="saveAdminAuthBtn" style="padding:0.7rem 1.25rem; font-weight:700; height:42px; display:inline-flex; align-items:center; gap:0.4rem; justify-content:center;">
-                        💾 Save Admin Credentials
-                    </button>
-                </div>
-            </form>
-        </div>
+                    <div class="form-group" style="margin:0; position:relative;">
+                        <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.35rem; display:block;">New Admin Password</label>
+                        <div style="position:relative;">
+                            <input type="password" id="adminAuthPass" required placeholder="Enter new admin password" style="background:#0b0f19; padding-right:2.5rem;">
+                            <button type="button" onclick="togglePasswordVisibility('adminAuthPass')" style="position:absolute; right:0.5rem; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1rem; padding:0.25rem;">👁️</button>
+                        </div>
+                    </div>
+                    <div>
+                        <button type="submit" class="btn" id="saveAdminAuthBtn" style="padding:0.7rem 1.25rem; font-weight:700; height:42px; display:inline-flex; align-items:center; gap:0.4rem; justify-content:center;">
+                            💾 Save Admin Credentials
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </details>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:1rem;">
             <div>
                 <h2 style="margin: 0 0 0.4rem 0; font-size: 1.25rem; font-weight: 700;">📺 IPTV Player Accounts (TiviMate / Televizo / Apps)</h2>
                 <p class="subtitle">Credentials given to users/devices to stream through this proxy with concurrent connection limits.</p>
@@ -1422,16 +1570,17 @@
             </div>
         </div>
 
-        <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 1.15rem; margin-bottom: 1.5rem;">
-            <h4 style="margin: 0 0 0.65rem 0; font-size: 0.9rem; color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem;">
-                🛡️ Connection Limit Enforcement &amp; Channel Switching Rollover
-            </h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1;">
+        <details style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: var(--radius); padding: 0.85rem 1.15rem; margin-bottom: 1.5rem;">
+            <summary style="font-size: 0.9rem; color: #a5b4fc; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                <span style="display: flex; align-items: center; gap: 0.4rem;">🛡️ Connection Limit Enforcement &amp; Channel Switching Rollover</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); opacity: 0.75;">(Click to expand)</span>
+            </summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; font-size: 0.8rem; color: #cbd5e1; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed rgba(99,102,241,0.25);">
                 <div>🔄 <strong>Seamless Channel Switches:</strong> When a player switches channels from the same IP, the previous stream slot is freed immediately so the limit is never falsely breached.</div>
                 <div>🚫 <strong>Device Concurrency Protection:</strong> When maximum active connections are reached and another device/IP tries to stream, the request is rejected with <code>403 Forbidden</code>.</div>
                 <div>👤 <strong>Player Setup:</strong> Users log in to Televizo, TiviMate, or IPTV Smarters with their proxy username and password pointing to <code>http://vps:8080</code>.</div>
             </div>
-        </div>
+        </details>
 
         <!-- INLINE ADD USER BOX -->
         <div id="inlineAddUserBox" class="pool-card" style="display: none; margin-bottom: 1.5rem; border: 1px solid rgba(99, 102, 241, 0.4); background: rgba(15, 23, 42, 0.85); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
@@ -1518,10 +1667,14 @@
                         When <strong>enabled</strong>, if multiple devices/accounts watch the same live TV channel simultaneously, the proxy fetches <strong>1 single upstream connection</strong> and multiplexes it locally to save your IPTV provider connections. When <strong>disabled</strong>, each device streams directly with 1:1 pass-through.
                     </p>
                 </div>
-                <label class="switch-toggle" style="margin:0;">
-                    <input type="checkbox" id="streamRelayToggle" onchange="toggleStreamRelayMode()">
-                    <span id="relayToggleLabel" style="font-weight:600; font-size:0.9rem; color:var(--text);">Direct 1:1 Mode</span>
-                </label>
+                <div class="segmented-control" id="streamRelaySegmented">
+                    <button type="button" class="seg-btn" id="segRelayMux" onclick="setStreamRelayMode(true)">
+                        <span>🔗 Shared Multiplexing</span>
+                    </button>
+                    <button type="button" class="seg-btn active" id="segRelayDirect" onclick="setStreamRelayMode(false)">
+                        <span>⚡ Direct 1:1 Pass-Through</span>
+                    </button>
+                </div>
             </div>
 
             <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.85rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
@@ -1582,6 +1735,33 @@
                 <button type="button" class="btn" id="saveVpnBtn" onclick="saveVpnProxy()">
                     💾 Save &amp; Apply Proxy
                 </button>
+            </div>
+        </div>
+
+        <!-- 3-Node Visual VPN Routing Pipeline -->
+        <div class="vpn-pipeline-card" id="vpnPipelineCard">
+            <div class="pipeline-node">
+                <div class="pipeline-icon">🖥️</div>
+                <div class="pipeline-info">
+                    <span class="pipeline-label">Host Machine</span>
+                    <span class="pipeline-val" id="pipelineHostIp">VPS Host</span>
+                </div>
+            </div>
+            <div class="pipeline-arrow">──────►</div>
+            <div class="pipeline-node">
+                <div class="pipeline-icon" id="pipelineProxyIcon">🛡️</div>
+                <div class="pipeline-info">
+                    <span class="pipeline-label">Proxy Tunnel</span>
+                    <span class="pipeline-val" id="pipelineProxyStatus">Direct (No Proxy)</span>
+                </div>
+            </div>
+            <div class="pipeline-arrow">──────►</div>
+            <div class="pipeline-node">
+                <div class="pipeline-icon">🌍</div>
+                <div class="pipeline-info">
+                    <span class="pipeline-label">Provider Exit IP</span>
+                    <span class="pipeline-val" id="pipelineExitIp">Direct Outbound</span>
+                </div>
             </div>
         </div>
 
@@ -1805,7 +1985,10 @@
                 <div class="form-grid" style="margin-bottom:1.25rem;">
                     <div class="form-group">
                         <label class="form-label" id="vpnUserLabel">Service Username</label>
-                        <input type="text" class="form-input" id="vpnUserInput" placeholder="Service Username">
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="password" class="form-input" id="vpnUserInput" placeholder="Service Username">
+                            <button type="button" class="btn btn-secondary" onclick="toggleVpnUserVisibility()" title="Show/Hide Username" style="padding:0 0.85rem;">👁️</button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" id="vpnPassLabel">Service Password</label>
@@ -2023,6 +2206,18 @@
                 <button type="button" class="btn btn-secondary" onclick="closeGluetunLogsModal()">Close</button>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- STICKY BOTTOM SAVE BAR FOR UNSAVED CATEGORY FILTER CHANGES -->
+<div id="stickySaveBar" class="sticky-save-bar">
+    <span style="font-size:0.875rem; font-weight:600; color:#e2e8f0; display:flex; align-items:center; gap:0.55rem;">
+        <span style="width:9px; height:9px; border-radius:50%; background:#fbbf24; display:inline-block; box-shadow:0 0 8px #fbbf24;"></span>
+        Unsaved Category Filters
+    </span>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="discardCategoryChanges()" style="padding:0.4rem 0.85rem; font-size:0.8rem;">Discard</button>
+        <button type="button" class="btn btn-sm" onclick="saveFilters()" style="padding:0.4rem 1rem; font-size:0.8rem; background:#4f46e5; color:#fff; font-weight:600; box-shadow:0 2px 10px rgba(79,70,229,0.45);">💾 Save Filters</button>
     </div>
 </div>
 
@@ -2566,6 +2761,96 @@
         }
     }
 
+    const UNICODE_MAP = {
+        '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+        'ᴬ': 'A', 'ᴮ': 'B', 'ᶜ': 'C', 'ᴰ': 'D', 'ᴱ': 'E', 'ᶠ': 'F', 'ᴳ': 'G', 'ᴴ': 'H', 'ᴵ': 'I', 'ᴶ': 'J',
+        'ᴷ': 'K', 'ᴸ': 'L', 'ᴹ': 'M', 'ᴺ': 'N', 'ᴼ': 'O', 'ᴾ': 'P', 'ᴿ': 'R', 'ᵀ': 'T', 'ᵁ': 'U', 'ⱽ': 'V',
+        'ᵂ': 'W', 'ᵃ': 'a', 'ᵇ': 'b', 'ᶜ': 'c', 'ᵈ': 'd', 'ᵉ': 'e', 'ᶠ': 'f', 'ᵍ': 'g', 'ʰ': 'h', 'ⁱ': 'i',
+        'ʲ': 'j', 'ᵏ': 'k', 'ˡ': 'l', 'ᵐ': 'm', 'ⁿ': 'n', 'ᵒ': 'o', 'ᵖ': 'p', 'ʳ': 'r', 'ˢ': 's', 'ᵗ': 't',
+        'ᵘ': 'u', 'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y', 'ᶻ': 'z', '·': ' ', '•': ' ', '★': '', '☆': ''
+    };
+
+    function normalizeCategoryString(str) {
+        if (!str) return { original: '', normalized: '', badges: [], cleanTitle: '', prefix: '' };
+        
+        let norm = '';
+        for (const ch of str) {
+            norm += UNICODE_MAP[ch] !== undefined ? UNICODE_MAP[ch] : ch;
+        }
+        norm = norm.trim();
+
+        // Extract country / region prefix like "UK |", "US :", "FR -", "CA |"
+        let prefix = '';
+        let rest = norm;
+        const prefixMatch = norm.match(/^([A-Z0-9]{2,5})\s*[:\|\-]\s*(.*)$/i);
+        if (prefixMatch) {
+            prefix = prefixMatch[1].toUpperCase();
+            rest = prefixMatch[2];
+        }
+
+        // Quality and codec badges
+        const upper = norm.toUpperCase();
+        const badges = [];
+        if (upper.includes('4K') || upper.includes('3840') || upper.includes('UHD')) {
+            badges.push({ text: '4K UHD', class: 'badge-4k' });
+        }
+        if (upper.includes('HEVC') || upper.includes('H.265') || upper.includes('H265')) {
+            badges.push({ text: 'HEVC', class: 'badge-hevc' });
+        }
+        if (upper.includes('RAW') || upper.includes('60FPS') || upper.includes('50FPS')) {
+            badges.push({ text: 'RAW 60FPS', class: 'badge-raw' });
+        }
+        if (upper.includes('DOLBY') || upper.includes('5.1') || upper.includes('ATMOS')) {
+            badges.push({ text: 'DOLBY', class: 'badge-dolby' });
+        }
+
+        return {
+            original: str,
+            normalized: norm,
+            prefix,
+            badges,
+            cleanTitle: rest
+        };
+    }
+
+    let hasUnsavedCategoryFilters = false;
+
+    function markCategoryDirty(isDirty) {
+        hasUnsavedCategoryFilters = !!isDirty;
+        const stickyBar = document.getElementById('stickySaveBar');
+        if (stickyBar) {
+            if (hasUnsavedCategoryFilters) {
+                stickyBar.classList.add('visible');
+            } else {
+                stickyBar.classList.remove('visible');
+            }
+        }
+    }
+
+    function updateCategoryCountBadge(type) {
+        const total = state[type] ? state[type].length : 0;
+        const checkboxes = document.querySelectorAll(`.${type}-cb`);
+        let checkedCount = 0;
+        if (checkboxes.length > 0) {
+            checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+        } else if (state[type]) {
+            checkedCount = state[type].filter(item => isSelected(type, item.category_name)).length;
+        }
+        const badge = document.getElementById(`${type}Badge`);
+        if (badge) {
+            badge.innerText = `${checkedCount}/${total}`;
+            badge.title = `${checkedCount} of ${total} categories enabled`;
+        }
+    }
+
+    function discardCategoryChanges() {
+        renderList('live');
+        renderList('vod');
+        renderList('series');
+        markCategoryDirty(false);
+        showToast('Category filter changes discarded', 'info');
+    }
+
     async function loadCategories() {
         updateStatusBadge('loading', 'Loading categories...');
         setCategoryLoading(true);
@@ -2589,13 +2874,10 @@
             state.series = data.series || [];
             state.filters = data.filters || state.filters;
 
-            document.getElementById('liveBadge').innerText = state.live.length;
-            document.getElementById('vodBadge').innerText = state.vod.length;
-            document.getElementById('seriesBadge').innerText = state.series.length;
-
             renderList('live');
             renderList('vod');
             renderList('series');
+            markCategoryDirty(false);
         } catch (e) {
             document.getElementById('providerAlertMsg').innerText = 'Error loading categories: ' + e.message;
             document.getElementById('providerAlert').style.display = 'flex';
@@ -2611,7 +2893,7 @@
             const listElem = document.getElementById(`${type}List`);
             if (loadingElem && listElem) {
                 loadingElem.style.display = isLoading ? 'block' : 'none';
-                listElem.style.display = isLoading ? 'none' : 'block';
+                listElem.style.display = isLoading ? 'none' : 'grid';
             }
         });
     }
@@ -2637,28 +2919,59 @@
         const items = state[type];
 
         if (!items || items.length === 0) {
-            list.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--text-muted);">No categories available. Please check provider settings.</div>`;
+            list.innerHTML = `<div style="grid-column: 1 / -1; padding: 2.5rem; text-align: center; color: var(--text-muted);">No categories available. Please check provider settings.</div>`;
+            updateCategoryCountBadge(type);
             return;
         }
 
         let html = '';
         items.forEach((item, index) => {
-            const checked = isSelected(type, item.category_name) ? 'checked' : '';
+            const checked = isSelected(type, item.category_name);
+            const parsed = normalizeCategoryString(item.category_name);
+            
+            let badgesHtml = '';
+            if (parsed.prefix) {
+                badgesHtml += `<span class="cat-badge badge-prefix">${escapeHtml(parsed.prefix)}</span>`;
+            }
+            parsed.badges.forEach(b => {
+                badgesHtml += `<span class="cat-badge ${b.class}">${b.text}</span>`;
+            });
+
             html += `
-                <div class="category-item" data-name="${escapeHtml(item.category_name.toLowerCase())}" onclick="toggleItem('${type}', ${index})">
-                    <input type="checkbox" id="${type}-${index}" value="${escapeHtml(item.category_name)}" ${checked} class="${type}-cb" onclick="event.stopPropagation()">
-                    <label for="${type}-${index}">${escapeHtml(item.category_name)}</label>
+                <div class="category-item ${checked ? 'is-checked' : ''}" id="catItem_${type}_${index}" data-name="${escapeHtml(parsed.normalized.toLowerCase())}" onclick="toggleItem('${type}', ${index})">
+                    <div style="display:flex; align-items:center; min-width:0; flex:1; overflow:hidden;">
+                        <input type="checkbox" id="${type}-${index}" value="${escapeHtml(item.category_name)}" ${checked ? 'checked' : ''} class="${type}-cb" onclick="event.stopPropagation(); onCheckboxClick('${type}', ${index})">
+                        <label for="${type}-${index}" title="${escapeHtml(item.category_name)}">${escapeHtml(parsed.cleanTitle || item.category_name)}</label>
+                    </div>
+                    ${badgesHtml ? `<div class="cat-badges">${badgesHtml}</div>` : ''}
                 </div>
             `;
         });
         list.innerHTML = html;
+        updateCategoryCountBadge(type);
     }
 
     function toggleItem(type, index) {
         const cb = document.getElementById(`${type}-${index}`);
+        const card = document.getElementById(`catItem_${type}_${index}`);
         if (cb) {
             cb.checked = !cb.checked;
+            if (card) {
+                card.classList.toggle('is-checked', cb.checked);
+            }
+            updateCategoryCountBadge(type);
+            markCategoryDirty(true);
         }
+    }
+
+    function onCheckboxClick(type, index) {
+        const cb = document.getElementById(`${type}-${index}`);
+        const card = document.getElementById(`catItem_${type}_${index}`);
+        if (cb && card) {
+            card.classList.toggle('is-checked', cb.checked);
+        }
+        updateCategoryCountBadge(type);
+        markCategoryDirty(true);
     }
 
     function escapeHtml(str) {
@@ -2686,14 +2999,18 @@
     function selectAll(type, check) {
         const checkboxes = document.querySelectorAll(`.${type}-cb`);
         checkboxes.forEach(cb => {
-            if (cb.parentElement.style.display !== 'none') {
+            const card = cb.closest('.category-item');
+            if (card && card.style.display !== 'none') {
                 cb.checked = check;
+                card.classList.toggle('is-checked', check);
             }
         });
+        updateCategoryCountBadge(type);
+        markCategoryDirty(true);
     }
 
     async function saveFilters() {
-        const btns = document.querySelectorAll('#saveFiltersBtn, .tab-content .btn');
+        const btns = document.querySelectorAll('#saveFiltersBtn, .tab-content .btn, #stickySaveBar .btn');
         btns.forEach(b => { if (b.innerText.includes('Save')) b.disabled = true; });
 
         const getSelected = (type) => {
@@ -2719,7 +3036,11 @@
             if (!res.ok) throw new Error('HTTP ' + res.status);
 
             state.filters = payload;
+            markCategoryDirty(false);
             showToast('Filter presets saved successfully!', 'success');
+            updateCategoryCountBadge('live');
+            updateCategoryCountBadge('vod');
+            updateCategoryCountBadge('series');
         } catch (e) {
             showToast('Error saving filters: ' + e.message, 'error');
         } finally {
@@ -2826,6 +3147,35 @@
         }
     }
 
+    function escapeJs(str) {
+        if (!str) return '';
+        return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    function copyUserSetup(username, password) {
+        const origin = window.location.origin;
+        const text = `📺 IPTV Proxy Credentials & Setup:
+Server: ${origin}
+Username: ${username}
+Password: ${password}
+
+M3U Playlist URL:
+${origin}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=ts
+
+XMLTV EPG URL:
+${origin}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`📋 Copied IPTV setup for '${username}' to clipboard!`, 'success');
+            }).catch(() => {
+                prompt(`Copy IPTV setup for '${username}':`, text);
+            });
+        } else {
+            prompt(`Copy IPTV setup for '${username}':`, text);
+        }
+    }
+
     function renderUsers() {
         const container = document.getElementById('usersListContainer');
         if (!state.users || state.users.length === 0) {
@@ -2891,6 +3241,7 @@
                         </label>
                     </td>
                     <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copyUserSetup('${escapeJs(u.username)}', '${escapeJs(u.password)}')" title="Copy Xtream credentials & M3U playlist URLs for IPTV apps">📋 Copy Setup</button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="toggleUserInlineEdit(${idx})">✏️ Edit</button>
                         <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger);" onclick="deleteUser('${u.id}', '${escapeHtml(u.username)}')">🗑️</button>
                     </td>
@@ -3174,7 +3525,18 @@
         const pill = document.getElementById('relayStatusPill');
         const label = document.getElementById('relayToggleLabel');
         const engine = document.getElementById('statStreamingEngine');
+        const btnMux = document.getElementById('segRelayMux');
+        const btnDirect = document.getElementById('segRelayDirect');
 
+        if (btnMux && btnDirect) {
+            if (enabled) {
+                btnMux.classList.add('active');
+                btnDirect.classList.remove('active');
+            } else {
+                btnDirect.classList.add('active');
+                btnMux.classList.remove('active');
+            }
+        }
         if (toggle) toggle.checked = !!enabled;
         if (pill) {
             pill.className = 'url-pill ' + (enabled ? 'online' : 'active');
@@ -3207,9 +3569,7 @@
         }
     }
 
-    async function toggleStreamRelayMode() {
-        const toggle = document.getElementById('streamRelayToggle');
-        const enabled = toggle.checked;
+    async function setStreamRelayMode(enabled) {
         try {
             const res = await fetch('/admin/api/stream-relay', {
                 method: 'POST',
@@ -3218,17 +3578,21 @@
             });
             const data = await res.json();
             if (res.ok) {
-                showToast(data.message || 'Streaming mode updated', 'success');
+                showToast(data.message || (enabled ? '🔗 Shared Multiplexing active' : '⚡ Direct 1:1 streaming active'), 'success');
                 updateStreamRelayUI(enabled);
                 loadStreams();
             } else {
-                toggle.checked = !enabled;
                 showToast(data.error || 'Failed updating streaming mode', 'error');
             }
         } catch (e) {
-            toggle.checked = !enabled;
             showToast('Network error: ' + e.message, 'error');
         }
+    }
+
+    async function toggleStreamRelayMode() {
+        const toggle = document.getElementById('streamRelayToggle');
+        const enabled = toggle ? toggle.checked : true;
+        setStreamRelayMode(enabled);
     }
 
     async function togglePassOriginalUa() {
@@ -3442,6 +3806,13 @@
             const statusBadge = document.getElementById('vpnStatusBadge');
             const statusSub = document.getElementById('vpnStatusSub');
 
+            const pipeHost = document.getElementById('pipelineHostIp');
+            const pipeProxy = document.getElementById('pipelineProxyStatus');
+            const pipeIcon = document.getElementById('pipelineProxyIcon');
+            const pipeExit = document.getElementById('pipelineExitIp');
+
+            if (pipeHost) pipeHost.innerText = window.location.hostname || 'VPS Host';
+
             if (data.active) {
                 badge.innerText = 'ON';
                 badge.className = 'badge badge-green';
@@ -3451,10 +3822,16 @@
                     const titleEl = document.getElementById('vpnStatusTitle');
                     if (titleEl) titleEl.innerText = '🛡️ VPN Protected (Gluetun Sidecar)';
                     statusSub.innerText = 'All streams routed through Gluetun (Unlimited concurrent connections)';
+                    if (pipeProxy) pipeProxy.innerText = 'Gluetun (Port 8888)';
+                    if (pipeIcon) pipeIcon.innerText = '🐳';
+                    if (pipeExit) pipeExit.innerText = 'VPN Protected Exit';
                 } else {
                     const titleEl = document.getElementById('vpnStatusTitle');
                     if (titleEl) titleEl.innerText = 'SOCKS5 Proxy Configuration';
                     statusSub.innerText = `Routing through ${s.host || 'custom proxy'}:${s.port || 1080}`;
+                    if (pipeProxy) pipeProxy.innerText = `${s.host || 'SOCKS5'}:${s.port || 1080}`;
+                    if (pipeIcon) pipeIcon.innerText = '🛡️';
+                    if (pipeExit) pipeExit.innerText = 'Proxy Protected Exit';
                 }
             } else {
                 badge.innerText = 'OFF';
@@ -3466,6 +3843,9 @@
                 const titleEl = document.getElementById('vpnStatusTitle');
                 if (titleEl) titleEl.innerText = 'SOCKS5 Proxy Configuration';
                 statusSub.innerText = 'Traffic connects directly without proxy';
+                if (pipeProxy) pipeProxy.innerText = 'Direct (No Proxy)';
+                if (pipeIcon) pipeIcon.innerText = '⚡';
+                if (pipeExit) pipeExit.innerText = 'Direct VPS Public IP';
             }
 
             // Check Gluetun container status and auto-fill credentials if available
@@ -3633,6 +4013,13 @@ services:<br>
         inp.type = inp.type === 'password' ? 'text' : 'password';
     }
 
+    function toggleVpnUserVisibility() {
+        const inp = document.getElementById('vpnUserInput');
+        if (inp) {
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+        }
+    }
+
     async function saveVpnProxy() {
         const btn = document.getElementById('saveVpnBtn');
         btn.disabled = true;
@@ -3702,6 +4089,10 @@ services:<br>
                 resBox.style.color = '#86efac';
                 resBox.innerHTML = `<strong>✅ Success!</strong> Proxy connected cleanly.<br>Outbound Public IP: <code style="font-size:0.95rem; font-weight:700;">${escapeHtml(data.ip)}</code> (Latency: ${data.latency}ms)`;
                 showToast(`✅ Proxy Online! IP: ${data.ip}`, 'success');
+                const pipeExit = document.getElementById('pipelineExitIp');
+                if (pipeExit && data.ip) {
+                    pipeExit.innerText = data.ip;
+                }
             } else {
                 resBox.style.background = 'rgba(239, 68, 68, 0.1)';
                 resBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';

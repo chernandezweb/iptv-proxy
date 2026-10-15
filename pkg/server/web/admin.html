@@ -547,9 +547,8 @@
         }
 
         .list-container.grouped-mode {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            display: block;
+            padding: 12px;
         }
 
         /* Playlist Group Nav & Filter Pills */
@@ -622,11 +621,19 @@
 
         /* Category Group Section (|) */
         .category-group-section {
+            display: block;
+            margin-bottom: 12px;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: rgba(15, 23, 42, 0.6);
             overflow: hidden;
             transition: border-color 0.15s ease;
+            flex-shrink: 0;
+            min-height: fit-content;
+        }
+
+        .category-group-section:last-child {
+            margin-bottom: 0;
         }
 
         .category-group-section:hover {
@@ -637,6 +644,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            min-height: 44px;
             padding: 0.65rem 0.95rem;
             background: rgba(30, 41, 59, 0.65);
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -1684,7 +1692,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
                 <div style="display:flex; align-items:center; gap:0.4rem;">
                     <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
-                        ⚡ Groups Separated by (|) :
+                        ⚡ Playlist Groups :
                     </span>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.35rem;">
@@ -1724,7 +1732,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
                 <div style="display:flex; align-items:center; gap:0.4rem;">
                     <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
-                        ⚡ Groups Separated by (|) :
+                        ⚡ Playlist Groups :
                     </span>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.35rem;">
@@ -1764,7 +1772,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
                 <div style="display:flex; align-items:center; gap:0.4rem;">
                     <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
-                        ⚡ Groups Separated by (|) :
+                        ⚡ Playlist Groups :
                     </span>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.35rem;">
@@ -3040,49 +3048,6 @@
         'ᵘ': 'u', 'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y', 'ᶻ': 'z', '·': ' ', '•': ' ', '★': '', '☆': ''
     };
 
-    const COUNTRY_FLAGS = {
-        'US': '🇺🇸', 'USA': '🇺🇸', 'UNITED STATES': '🇺🇸',
-        'UK': '🇬🇧', 'GB': '🇬🇧', 'UNITED KINGDOM': '🇬🇧',
-        'CA': '🇨🇦', 'CANADA': '🇨🇦',
-        'FR': '🇫🇷', 'FRANCE': '🇫🇷',
-        'ES': '🇪🇸', 'SPAIN': '🇪🇸',
-        'DE': '🇩🇪', 'GERMANY': '🇩🇪',
-        'IT': '🇮🇹', 'ITALY': '🇮🇹',
-        'PT': '🇵🇹', 'PORTUGAL': '🇵🇹',
-        'NL': '🇳🇱', 'NETHERLANDS': '🇳🇱',
-        'BE': '🇧🇪', 'BELGIUM': '🇧🇪',
-        'CH': '🇨🇭', 'SWITZERLAND': '🇨🇭',
-        'AT': '🇦🇹', 'AUSTRIA': '🇦🇹',
-        'AU': '🇦🇺', 'AUSTRALIA': '🇦🇺',
-        'NZ': '🇳🇿', 'NEW ZEALAND': '🇳🇿',
-        'IE': '🇮🇪', 'IRELAND': '🇮🇪',
-        'MX': '🇲🇽', 'MEXICO': '🇲🇽',
-        'BR': '🇧🇷', 'BRAZIL': '🇧🇷',
-        'AR': '🇦🇷', 'ARGENTINA': '🇦🇷',
-        'CL': '🇨🇱', 'CHILE': '🇨🇱',
-        'CO': '🇨🇴', 'COLOMBIA': '🇨🇴',
-        'PE': '🇵🇪', 'PERU': '🇵🇪',
-        'VE': '🇻🇪', 'VENEZUELA': '🇻🇪',
-        'UY': '🇺🇾', 'URUGUAY': '🇺🇾',
-        'EC': '🇪🇨', 'ECUADOR': '🇪🇨',
-        'LATAM': '🌎', 'LATINO': '🌎',
-        'TR': '🇹🇷', 'TURKEY': '🇹🇷',
-        'GR': '🇬🇷', 'GREECE': '🇬🇷',
-        'PL': '🇵🇱', 'POLAND': '🇵🇱',
-        'RO': '🇷🇴', 'ROMANIA': '🇷🇴',
-        'RU': '🇷🇺', 'RUSSIA': '🇷🇺',
-        'UA': '🇺🇦', 'UKRAINE': '🇺🇦',
-        'IN': '🇮🇳', 'INDIA': '🇮🇳',
-        'PK': '🇵🇰', 'PAKISTAN': '🇵🇰',
-        'ARABIC': '🇸🇦', 'AR': '🇸🇦',
-        'SE': '🇸🇪', 'SWEDEN': '🇸🇪',
-        'NO': '🇳🇴', 'NORWAY': '🇳🇴',
-        'DK': '🇩🇰', 'DENMARK': '🇩🇰',
-        'FI': '🇫🇮', 'FINLAND': '🇫🇮',
-        'IL': '🇮🇱', 'ISRAEL': '🇮🇱',
-        'ZA': '🇿🇦', 'SOUTH AFRICA': '🇿🇦'
-    };
-
     const GENRE_ICONS = {
         'SPORTS': '⚽', 'SPORT': '⚽', 'FOOTBALL': '⚽', 'SOCCER': '⚽',
         'MOVIES': '🎬', 'CINEMA': '🎬', 'FILMS': '🎬', 'FILM': '🎬',
@@ -3098,17 +3063,13 @@
     };
 
     function getGroupIcon(groupName) {
-        if (!groupName) return '🏷️';
+        if (!groupName) return '';
         const upper = groupName.toUpperCase().trim();
-        if (COUNTRY_FLAGS[upper]) return COUNTRY_FLAGS[upper];
         if (GENRE_ICONS[upper]) return GENRE_ICONS[upper];
-        for (const [k, v] of Object.entries(COUNTRY_FLAGS)) {
-            if (upper.startsWith(k + ' ') || upper.endsWith(' ' + k) || upper === k) return v;
-        }
         for (const [k, v] of Object.entries(GENRE_ICONS)) {
             if (upper.includes(k)) return v;
         }
-        return '🏷️';
+        return '';
     }
 
     function extractCategoryGroup(rawName) {
@@ -3285,7 +3246,7 @@
             const listElem = document.getElementById(`${type}List`);
             if (loadingElem && listElem) {
                 loadingElem.style.display = isLoading ? 'block' : 'none';
-                listElem.style.display = isLoading ? 'none' : (state.viewMode[type] === 'flat' ? 'grid' : 'flex');
+                listElem.style.display = isLoading ? 'none' : (state.viewMode[type] === 'flat' ? 'grid' : 'block');
             }
         });
     }
@@ -3338,22 +3299,25 @@
             return groupsMap[b].length - groupsMap[a].length;
         });
 
-        // Render Group Filter Pills
-        const activeGroup = state.activeGroupFilter[type] || 'ALL';
-        let pillsHtml = `
-            <button type="button" class="group-pill ${activeGroup === 'ALL' ? 'active' : ''}" onclick="filterByGroup('${type}', 'ALL')">
-                <span>🌐 All</span>
-                <span class="group-pill-count">${items.length}</span>
-            </button>
-        `;
+        // Determine active group (no "ALL" pill)
+        let activeGroup = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
+        if (!activeGroup || activeGroup === 'ALL' || !groupsMap[activeGroup]) {
+            // Default to US if available, otherwise first group by count
+            activeGroup = groupKeys.includes('US') ? 'US' : (groupKeys[0] || 'GENERAL');
+            if (!state.activeGroupFilter) state.activeGroupFilter = {};
+            state.activeGroupFilter[type] = activeGroup;
+        }
 
+        // Render Group Filter Pills (NO "All" pill)
+        let pillsHtml = '';
         groupKeys.forEach(gName => {
             const count = groupsMap[gName].length;
             const icon = getGroupIcon(gName);
-            const isActive = activeGroup === gName;
+            const isActive = activeGroup.toUpperCase() === gName.toUpperCase();
+            const iconPart = icon ? `<span>${icon}</span> ` : '';
             pillsHtml += `
-                <button type="button" class="group-pill ${isActive ? 'active' : ''}" onclick="filterByGroup('${type}', '${escapeJs(gName)}')">
-                    <span>${icon} ${escapeHtml(gName)}</span>
+                <button type="button" class="group-pill ${isActive ? 'active' : ''}" data-group="${escapeHtml(gName)}" onclick="filterByGroup('${type}', '${escapeJs(gName)}')">
+                    <span>${iconPart}${escapeHtml(gName)}</span>
                     <span class="group-pill-count">${count}</span>
                 </button>
             `;
@@ -3369,9 +3333,10 @@
                 const groupItems = groupsMap[gName];
                 const cleanId = sanitizeGroupId(gName);
                 const icon = getGroupIcon(gName);
+                const displayIcon = icon || '📺';
                 const isCollapsed = !!(state.collapsedGroups[type] && state.collapsedGroups[type][cleanId]);
                 const checkedCount = groupItems.filter(gi => gi.checked).length;
-                const isHiddenByPill = (activeGroup !== 'ALL' && activeGroup !== gName);
+                const isHiddenByPill = (activeGroup.toUpperCase() !== gName.toUpperCase());
 
                 let cardsHtml = '';
                 groupItems.forEach(gi => {
@@ -3392,11 +3357,11 @@
                 });
 
                 groupsHtml += `
-                    <div class="category-group-section ${isCollapsed ? 'collapsed' : ''}" id="groupSec_${type}_${cleanId}" data-group-name="${escapeHtml(gName.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : ''}">
+                    <div class="category-group-section ${isCollapsed ? 'collapsed' : ''}" id="groupSec_${type}_${cleanId}" data-group-name="${escapeHtml(gName.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : 'display:block;'}">
                         <div class="category-group-header" onclick="toggleGroupCollapse('${type}', '${cleanId}')">
                             <div class="group-header-left">
                                 <span class="group-toggle-arrow">▼</span>
-                                <span class="group-header-icon">${icon}</span>
+                                <span class="group-header-icon">${displayIcon}</span>
                                 <span class="group-header-name">${escapeHtml(gName)}</span>
                                 <span class="group-header-badge">${groupItems.length} channels</span>
                                 <span class="group-header-ratio" id="groupRatio_${type}_${cleanId}">${checkedCount}/${groupItems.length}</span>
@@ -3420,7 +3385,7 @@
                 const parsed = extractCategoryGroup(item.category_name);
                 const checked = isSelected(type, item.category_name);
                 const cleanId = sanitizeGroupId(parsed.group);
-                const isHiddenByPill = (activeGroup !== 'ALL' && activeGroup !== parsed.group);
+                const isHiddenByPill = (activeGroup.toUpperCase() !== parsed.group.toUpperCase());
 
                 let badgesHtml = '';
                 badgesHtml += `<span class="cat-badge badge-prefix">${escapeHtml(parsed.group)}</span>`;
@@ -3429,7 +3394,7 @@
                 });
 
                 flatHtml += `
-                    <div class="category-item ${checked ? 'is-checked' : ''}" id="catItem_${type}_${index}" data-name="${escapeHtml(parsed.normalized.toLowerCase())}" data-group="${escapeHtml(parsed.group.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : ''}" onclick="toggleItem('${type}', ${index}, '${cleanId}')">
+                    <div class="category-item ${checked ? 'is-checked' : ''}" id="catItem_${type}_${index}" data-name="${escapeHtml(parsed.normalized.toLowerCase())}" data-group="${escapeHtml(parsed.group.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : 'display:flex;'}" onclick="toggleItem('${type}', ${index}, '${cleanId}')">
                         <div style="display:flex; align-items:center; min-width:0; flex:1; overflow:hidden;">
                             <input type="checkbox" id="${type}-${index}" value="${escapeHtml(item.category_name)}" ${checked ? 'checked' : ''} class="${type}-cb cb-group-${cleanId}" onclick="event.stopPropagation(); onCheckboxClick('${type}', ${index}, '${cleanId}')">
                             <label for="${type}-${index}" title="${escapeHtml(item.category_name)}">${escapeHtml(parsed.cleanTitle || item.category_name)}</label>
@@ -3473,41 +3438,43 @@
         if (!state.activeGroupFilter) state.activeGroupFilter = {};
         state.activeGroupFilter[type] = groupName;
 
+        // Reset search input on switching group pill
+        const searchInput = document.getElementById(`${type}SearchInput`);
+        if (searchInput && searchInput.value) {
+            searchInput.value = '';
+        }
+
         // Update active pill button
         const pills = document.querySelectorAll(`#${type}GroupPills .group-pill`);
         pills.forEach(p => {
-            const isMatch = (groupName === 'ALL' && p.innerText.includes('All')) ||
-                            (groupName !== 'ALL' && p.innerText.includes(groupName));
-            p.classList.toggle('active', isMatch);
+            const pGroup = (p.dataset.group || '').toUpperCase();
+            p.classList.toggle('active', pGroup === groupName.toUpperCase());
         });
 
         // Filter group sections or flat cards
         if (state.viewMode[type] !== 'flat') {
             const sections = document.querySelectorAll(`#${type}List .category-group-section`);
             sections.forEach(sec => {
-                if (groupName === 'ALL') {
-                    sec.style.display = '';
+                const secGroup = (sec.dataset.groupName || '').toUpperCase();
+                if (secGroup === groupName.toUpperCase()) {
+                    sec.style.display = 'block';
+                    sec.classList.remove('collapsed'); // auto-expand selected group
+                    const cards = sec.querySelectorAll('.category-item');
+                    cards.forEach(c => c.style.display = 'flex');
                 } else {
-                    const secGroup = (sec.dataset.groupName || '').toUpperCase();
-                    if (secGroup === groupName.toUpperCase()) {
-                        sec.style.display = '';
-                        sec.classList.remove('collapsed'); // auto-expand selected group
-                    } else {
-                        sec.style.display = 'none';
-                    }
+                    sec.style.display = 'none';
                 }
             });
         } else {
             const cards = document.querySelectorAll(`#${type}List .category-item`);
             cards.forEach(card => {
-                if (groupName === 'ALL') {
-                    card.style.display = 'flex';
-                } else {
-                    const cardGroup = (card.dataset.group || '').toUpperCase();
-                    card.style.display = (cardGroup === groupName.toUpperCase()) ? 'flex' : 'none';
-                }
+                const cardGroup = (card.dataset.group || '').toUpperCase();
+                card.style.display = (cardGroup === groupName.toUpperCase()) ? 'flex' : 'none';
             });
         }
+
+        const list = document.getElementById(`${type}List`);
+        if (list) list.scrollTop = 0;
     }
 
     function selectGroup(type, cleanGroupId, check) {
@@ -3597,10 +3564,10 @@
                 });
 
                 if (!query) {
-                    const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || 'ALL';
-                    sec.style.display = (activePill === 'ALL' || activePill.toLowerCase() === groupName) ? '' : 'none';
+                    const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
+                    sec.style.display = (activePill.toLowerCase() === groupName) ? 'block' : 'none';
                 } else if (visibleCount > 0) {
-                    sec.style.display = '';
+                    sec.style.display = 'block';
                     sec.classList.remove('collapsed'); // auto-expand to show matches
                 } else {
                     sec.style.display = 'none';
@@ -3608,10 +3575,13 @@
             });
         } else {
             const items = document.querySelectorAll(`#${type}List .category-item`);
+            const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
             items.forEach(item => {
                 const name = (item.dataset.name || '').toLowerCase();
                 const group = (item.dataset.group || '').toLowerCase();
-                if (!query || name.includes(query) || group.includes(query)) {
+                if (!query) {
+                    item.style.display = (!activePill || activePill.toLowerCase() === group) ? 'flex' : 'none';
+                } else if (name.includes(query) || group.includes(query)) {
                     item.style.display = 'flex';
                 } else {
                     item.style.display = 'none';

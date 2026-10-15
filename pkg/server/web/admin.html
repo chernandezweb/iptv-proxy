@@ -536,11 +536,206 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             background-color: var(--bg-input);
+            padding: 10px;
+        }
+
+        .list-container.flat-mode {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 8px;
-            padding: 12px;
             align-content: start;
+        }
+
+        .list-container.grouped-mode {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Playlist Group Nav & Filter Pills */
+        .group-nav-wrapper {
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.65rem 0.85rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .group-pills-bar {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 2px 0 4px 0;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(99, 102, 241, 0.4) transparent;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .group-pills-bar::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .group-pills-bar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.4);
+            border-radius: 4px;
+        }
+
+        .group-pill {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s ease;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .group-pill:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.4);
+            color: var(--text);
+        }
+
+        .group-pill.active {
+            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+            border-color: #818cf8;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        .group-pill-count {
+            font-size: 0.68rem;
+            opacity: 0.85;
+            font-weight: 500;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 1px 5px;
+            border-radius: 8px;
+        }
+
+        /* Category Group Section (|) */
+        .category-group-section {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.6);
+            overflow: hidden;
+            transition: border-color 0.15s ease;
+        }
+
+        .category-group-section:hover {
+            border-color: rgba(99, 102, 241, 0.35);
+        }
+
+        .category-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.65rem 0.95rem;
+            background: rgba(30, 41, 59, 0.65);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s ease;
+            gap: 0.75rem;
+        }
+
+        .category-group-header:hover {
+            background: rgba(40, 53, 76, 0.75);
+        }
+
+        .group-header-left {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .group-toggle-arrow {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+            display: inline-block;
+            width: 14px;
+            text-align: center;
+        }
+
+        .category-group-section.collapsed .group-toggle-arrow {
+            transform: rotate(-90deg);
+        }
+
+        .group-header-icon {
+            font-size: 1.15rem;
+            line-height: 1;
+        }
+
+        .group-header-name {
+            font-weight: 700;
+            font-size: 0.92rem;
+            color: #ffffff;
+            letter-spacing: 0.01em;
+        }
+
+        .group-header-badge {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.25);
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .group-header-ratio {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            padding: 2px 7px;
+            border-radius: 6px;
+        }
+
+        .group-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-shrink: 0;
+        }
+
+        .btn-group-action {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 0.25rem 0.6rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-group-action:hover {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: rgba(99, 102, 241, 0.45);
+            color: #ffffff;
+        }
+
+        .category-group-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .category-group-section.collapsed .category-group-grid {
+            display: none;
         }
 
         .list-container::-webkit-scrollbar {
@@ -1476,49 +1671,121 @@
     <!-- LIVE TV TAB -->
     <div id="liveTab" class="tab-content">
         <div class="controls">
-            <input type="text" class="search" placeholder="Search live categories..." oninput="filterList('live', this.value)">
+            <input type="text" class="search" id="liveSearchInput" placeholder="Search live categories or groups (e.g. US, SPORTS, HBO)..." oninput="filterList('live', this.value)">
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="selectAll('live', true)">Select All</button>
-                <button class="btn btn-secondary" onclick="selectAll('live', false)">Clear All</button>
-                <button class="btn" onclick="saveFilters()">💾 Save Filters</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('live', true)">Select All</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('live', false)">Clear All</button>
+                <button type="button" class="btn" onclick="saveFilters()">💾 Save Filters</button>
             </div>
         </div>
+
+        <!-- Automatic Group (|) Navigation & Filter Track -->
+        <div class="group-nav-wrapper" id="liveGroupNavWrapper" style="display: none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                    <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
+                        ⚡ Groups Separated by (|) :
+                    </span>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.35rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="liveToggleViewBtn" onclick="toggleGroupedView('live')" title="Toggle Grouped Sections vs Flat Grid" style="font-size:0.75rem; padding:0.25rem 0.55rem;">
+                        📁 Grouped View
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('live', true)" title="Expand all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▼ Expand All
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('live', false)" title="Collapse all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▶ Collapse All
+                    </button>
+                </div>
+            </div>
+            <div class="group-pills-bar" id="liveGroupPills"></div>
+        </div>
+
         <div id="liveLoading" class="loading-state">
             <span class="spinner"></span> Loading Live TV categories...
         </div>
-        <div class="list-container" id="liveList" style="display: none;"></div>
+        <div class="list-container grouped-mode" id="liveList" style="display: none;"></div>
     </div>
 
     <!-- VOD TAB -->
     <div id="vodTab" class="tab-content">
         <div class="controls">
-            <input type="text" class="search" placeholder="Search movies categories..." oninput="filterList('vod', this.value)">
+            <input type="text" class="search" id="vodSearchInput" placeholder="Search movies categories or groups..." oninput="filterList('vod', this.value)">
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="selectAll('vod', true)">Select All</button>
-                <button class="btn btn-secondary" onclick="selectAll('vod', false)">Clear All</button>
-                <button class="btn" onclick="saveFilters()">💾 Save Filters</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('vod', true)">Select All</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('vod', false)">Clear All</button>
+                <button type="button" class="btn" onclick="saveFilters()">💾 Save Filters</button>
             </div>
         </div>
+
+        <!-- Automatic Group (|) Navigation & Filter Track -->
+        <div class="group-nav-wrapper" id="vodGroupNavWrapper" style="display: none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                    <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
+                        ⚡ Groups Separated by (|) :
+                    </span>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.35rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="vodToggleViewBtn" onclick="toggleGroupedView('vod')" title="Toggle Grouped Sections vs Flat Grid" style="font-size:0.75rem; padding:0.25rem 0.55rem;">
+                        📁 Grouped View
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('vod', true)" title="Expand all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▼ Expand All
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('vod', false)" title="Collapse all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▶ Collapse All
+                    </button>
+                </div>
+            </div>
+            <div class="group-pills-bar" id="vodGroupPills"></div>
+        </div>
+
         <div id="vodLoading" class="loading-state">
             <span class="spinner"></span> Loading Movies categories...
         </div>
-        <div class="list-container" id="vodList" style="display: none;"></div>
+        <div class="list-container grouped-mode" id="vodList" style="display: none;"></div>
     </div>
 
     <!-- SERIES TAB -->
     <div id="seriesTab" class="tab-content">
         <div class="controls">
-            <input type="text" class="search" placeholder="Search series categories..." oninput="filterList('series', this.value)">
+            <input type="text" class="search" id="seriesSearchInput" placeholder="Search series categories or groups..." oninput="filterList('series', this.value)">
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="selectAll('series', true)">Select All</button>
-                <button class="btn btn-secondary" onclick="selectAll('series', false)">Clear All</button>
-                <button class="btn" onclick="saveFilters()">💾 Save Filters</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('series', true)">Select All</button>
+                <button type="button" class="btn btn-secondary" onclick="selectAll('series', false)">Clear All</button>
+                <button type="button" class="btn" onclick="saveFilters()">💾 Save Filters</button>
             </div>
         </div>
+
+        <!-- Automatic Group (|) Navigation & Filter Track -->
+        <div class="group-nav-wrapper" id="seriesGroupNavWrapper" style="display: none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                    <span style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:#a5b4fc; letter-spacing:0.04em;">
+                        ⚡ Groups Separated by (|) :
+                    </span>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.35rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="seriesToggleViewBtn" onclick="toggleGroupedView('series')" title="Toggle Grouped Sections vs Flat Grid" style="font-size:0.75rem; padding:0.25rem 0.55rem;">
+                        📁 Grouped View
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('series', true)" title="Expand all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▼ Expand All
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="expandAllGroups('series', false)" title="Collapse all groups" style="font-size:0.75rem; padding:0.25rem 0.45rem;">
+                        ▶ Collapse All
+                    </button>
+                </div>
+            </div>
+            <div class="group-pills-bar" id="seriesGroupPills"></div>
+        </div>
+
         <div id="seriesLoading" class="loading-state">
             <span class="spinner"></span> Loading Series categories...
         </div>
-        <div class="list-container" id="seriesList" style="display: none;"></div>
+        <div class="list-container grouped-mode" id="seriesList" style="display: none;"></div>
     </div>
 
     <!-- USERS TAB -->
@@ -2230,7 +2497,10 @@
         live: [], vod: [], series: [],
         filters: { allowed_live_categories: [], allowed_vod_categories: [], allowed_series_categories: [] },
         currentTab: 'provider',
-        testResults: {}
+        testResults: {},
+        activeGroupFilter: { live: 'ALL', vod: 'ALL', series: 'ALL' },
+        viewMode: { live: 'grouped', vod: 'grouped', series: 'grouped' },
+        collapsedGroups: { live: {}, vod: {}, series: {} }
     };
 
     function switchTab(type) {
@@ -2770,25 +3040,134 @@
         'ᵘ': 'u', 'ᵛ': 'v', 'ʷ': 'w', 'ˣ': 'x', 'ʸ': 'y', 'ᶻ': 'z', '·': ' ', '•': ' ', '★': '', '☆': ''
     };
 
-    function normalizeCategoryString(str) {
-        if (!str) return { original: '', normalized: '', badges: [], cleanTitle: '', prefix: '' };
+    const COUNTRY_FLAGS = {
+        'US': '🇺🇸', 'USA': '🇺🇸', 'UNITED STATES': '🇺🇸',
+        'UK': '🇬🇧', 'GB': '🇬🇧', 'UNITED KINGDOM': '🇬🇧',
+        'CA': '🇨🇦', 'CANADA': '🇨🇦',
+        'FR': '🇫🇷', 'FRANCE': '🇫🇷',
+        'ES': '🇪🇸', 'SPAIN': '🇪🇸',
+        'DE': '🇩🇪', 'GERMANY': '🇩🇪',
+        'IT': '🇮🇹', 'ITALY': '🇮🇹',
+        'PT': '🇵🇹', 'PORTUGAL': '🇵🇹',
+        'NL': '🇳🇱', 'NETHERLANDS': '🇳🇱',
+        'BE': '🇧🇪', 'BELGIUM': '🇧🇪',
+        'CH': '🇨🇭', 'SWITZERLAND': '🇨🇭',
+        'AT': '🇦🇹', 'AUSTRIA': '🇦🇹',
+        'AU': '🇦🇺', 'AUSTRALIA': '🇦🇺',
+        'NZ': '🇳🇿', 'NEW ZEALAND': '🇳🇿',
+        'IE': '🇮🇪', 'IRELAND': '🇮🇪',
+        'MX': '🇲🇽', 'MEXICO': '🇲🇽',
+        'BR': '🇧🇷', 'BRAZIL': '🇧🇷',
+        'AR': '🇦🇷', 'ARGENTINA': '🇦🇷',
+        'CL': '🇨🇱', 'CHILE': '🇨🇱',
+        'CO': '🇨🇴', 'COLOMBIA': '🇨🇴',
+        'PE': '🇵🇪', 'PERU': '🇵🇪',
+        'VE': '🇻🇪', 'VENEZUELA': '🇻🇪',
+        'UY': '🇺🇾', 'URUGUAY': '🇺🇾',
+        'EC': '🇪🇨', 'ECUADOR': '🇪🇨',
+        'LATAM': '🌎', 'LATINO': '🌎',
+        'TR': '🇹🇷', 'TURKEY': '🇹🇷',
+        'GR': '🇬🇷', 'GREECE': '🇬🇷',
+        'PL': '🇵🇱', 'POLAND': '🇵🇱',
+        'RO': '🇷🇴', 'ROMANIA': '🇷🇴',
+        'RU': '🇷🇺', 'RUSSIA': '🇷🇺',
+        'UA': '🇺🇦', 'UKRAINE': '🇺🇦',
+        'IN': '🇮🇳', 'INDIA': '🇮🇳',
+        'PK': '🇵🇰', 'PAKISTAN': '🇵🇰',
+        'ARABIC': '🇸🇦', 'AR': '🇸🇦',
+        'SE': '🇸🇪', 'SWEDEN': '🇸🇪',
+        'NO': '🇳🇴', 'NORWAY': '🇳🇴',
+        'DK': '🇩🇰', 'DENMARK': '🇩🇰',
+        'FI': '🇫🇮', 'FINLAND': '🇫🇮',
+        'IL': '🇮🇱', 'ISRAEL': '🇮🇱',
+        'ZA': '🇿🇦', 'SOUTH AFRICA': '🇿🇦'
+    };
+
+    const GENRE_ICONS = {
+        'SPORTS': '⚽', 'SPORT': '⚽', 'FOOTBALL': '⚽', 'SOCCER': '⚽',
+        'MOVIES': '🎬', 'CINEMA': '🎬', 'FILMS': '🎬', 'FILM': '🎬',
+        'SERIES': '🍿', 'SHOWS': '🍿',
+        'NEWS': '📰',
+        'KIDS': '👶', 'CHILDREN': '👶', 'ANIMATION': '👶',
+        'DOC': '🦁', 'DOCUMENTARY': '🦁', 'DOCUMENTARIES': '🦁',
+        'MUSIC': '🎵',
+        '24/7': '⏰', '247': '⏰',
+        'PPV': '🥊', 'VIP': '⭐', 'PREMIUM': '⭐',
+        'ADULT': '🔞', 'XXX': '🔞', '18+': '🔞',
+        'RADIO': '📻'
+    };
+
+    function getGroupIcon(groupName) {
+        if (!groupName) return '🏷️';
+        const upper = groupName.toUpperCase().trim();
+        if (COUNTRY_FLAGS[upper]) return COUNTRY_FLAGS[upper];
+        if (GENRE_ICONS[upper]) return GENRE_ICONS[upper];
+        for (const [k, v] of Object.entries(COUNTRY_FLAGS)) {
+            if (upper.startsWith(k + ' ') || upper.endsWith(' ' + k) || upper === k) return v;
+        }
+        for (const [k, v] of Object.entries(GENRE_ICONS)) {
+            if (upper.includes(k)) return v;
+        }
+        return '🏷️';
+    }
+
+    function extractCategoryGroup(rawName) {
+        if (!rawName) return { original: '', normalized: '', group: 'GENERAL', cleanTitle: '', badges: [] };
         
         let norm = '';
-        for (const ch of str) {
+        for (const ch of rawName) {
             norm += UNICODE_MAP[ch] !== undefined ? UNICODE_MAP[ch] : ch;
         }
         norm = norm.trim();
 
-        // Extract country / region prefix like "UK |", "US :", "FR -", "CA |"
-        let prefix = '';
-        let rest = norm;
-        const prefixMatch = norm.match(/^([A-Z0-9]{2,5})\s*[:\|\-]\s*(.*)$/i);
-        if (prefixMatch) {
-            prefix = prefixMatch[1].toUpperCase();
-            rest = prefixMatch[2];
+        let group = '';
+        let title = norm;
+
+        // 1. Delimiter: pipe '|' (specifically requested to separate by |)
+        if (norm.includes('|')) {
+            const parts = norm.split('|');
+            const first = parts[0].trim();
+            const rest = parts.slice(1).join('|').trim();
+            if (first.length > 0 && first.length <= 30) {
+                group = first.toUpperCase();
+                title = rest || norm;
+            }
+        }
+        // 2. Delimiter: brackets like [US] or (US)
+        else if (/^\[([^\]]{1,25})\]\s*(.*)$/.test(norm)) {
+            const m = norm.match(/^\[([^\]]{1,25})\]\s*(.*)$/);
+            group = m[1].trim().toUpperCase();
+            title = m[2].trim() || norm;
+        }
+        // 3. Delimiter: colon ':'
+        else if (norm.includes(':') && !norm.startsWith('http')) {
+            const parts = norm.split(':');
+            const first = parts[0].trim();
+            const rest = parts.slice(1).join(':').trim();
+            if (first.length > 0 && first.length <= 25) {
+                group = first.toUpperCase();
+                title = rest || norm;
+            }
+        }
+        // 4. Delimiter: " - "
+        else if (norm.includes(' - ')) {
+            const parts = norm.split(' - ');
+            const first = parts[0].trim();
+            const rest = parts.slice(1).join(' - ').trim();
+            if (first.length > 0 && first.length <= 20) {
+                group = first.toUpperCase();
+                title = rest || norm;
+            }
         }
 
-        // Quality and codec badges
+        if (!group) {
+            group = 'GENERAL';
+        }
+
+        // Clean up title
+        let cleanTitle = title.replace(/^[-:\|\s]+/, '').trim() || norm;
+
+        // Codec & quality badges
         const upper = norm.toUpperCase();
         const badges = [];
         if (upper.includes('4K') || upper.includes('3840') || upper.includes('UHD')) {
@@ -2805,12 +3184,16 @@
         }
 
         return {
-            original: str,
+            original: rawName,
             normalized: norm,
-            prefix,
-            badges,
-            cleanTitle: rest
+            group: group,
+            cleanTitle: cleanTitle,
+            badges: badges
         };
+    }
+
+    function sanitizeGroupId(groupName) {
+        return (groupName || 'GENERAL').replace(/[^a-zA-Z0-9_-]/g, '_');
     }
 
     let hasUnsavedCategoryFilters = false;
@@ -2841,6 +3224,15 @@
             badge.innerText = `${checkedCount}/${total}`;
             badge.title = `${checkedCount} of ${total} categories enabled`;
         }
+    }
+
+    function updateGroupRatioBadge(type, cleanGroupId) {
+        const ratioEl = document.getElementById(`groupRatio_${type}_${cleanGroupId}`);
+        if (!ratioEl) return;
+        const checkboxes = document.querySelectorAll(`#groupSec_${type}_${cleanGroupId} .${type}-cb, .cb-group-${cleanGroupId}`);
+        const total = checkboxes.length;
+        const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+        ratioEl.innerText = `${checked}/${total}`;
     }
 
     function discardCategoryChanges() {
@@ -2893,7 +3285,7 @@
             const listElem = document.getElementById(`${type}List`);
             if (loadingElem && listElem) {
                 loadingElem.style.display = isLoading ? 'block' : 'none';
-                listElem.style.display = isLoading ? 'none' : 'grid';
+                listElem.style.display = isLoading ? 'none' : (state.viewMode[type] === 'flat' ? 'grid' : 'flex');
             }
         });
     }
@@ -2917,41 +3309,142 @@
     function renderList(type) {
         const list = document.getElementById(`${type}List`);
         const items = state[type];
+        const groupNav = document.getElementById(`${type}GroupNavWrapper`);
+        const pillsContainer = document.getElementById(`${type}GroupPills`);
+        const isGrouped = state.viewMode[type] !== 'flat';
 
         if (!items || items.length === 0) {
             list.innerHTML = `<div style="grid-column: 1 / -1; padding: 2.5rem; text-align: center; color: var(--text-muted);">No categories available. Please check provider settings.</div>`;
+            if (groupNav) groupNav.style.display = 'none';
             updateCategoryCountBadge(type);
             return;
         }
 
-        let html = '';
-        items.forEach((item, index) => {
-            const checked = isSelected(type, item.category_name);
-            const parsed = normalizeCategoryString(item.category_name);
-            
-            let badgesHtml = '';
-            if (parsed.prefix) {
-                badgesHtml += `<span class="cat-badge badge-prefix">${escapeHtml(parsed.prefix)}</span>`;
-            }
-            parsed.badges.forEach(b => {
-                badgesHtml += `<span class="cat-badge ${b.class}">${b.text}</span>`;
-            });
+        if (groupNav) groupNav.style.display = 'block';
 
-            html += `
-                <div class="category-item ${checked ? 'is-checked' : ''}" id="catItem_${type}_${index}" data-name="${escapeHtml(parsed.normalized.toLowerCase())}" onclick="toggleItem('${type}', ${index})">
-                    <div style="display:flex; align-items:center; min-width:0; flex:1; overflow:hidden;">
-                        <input type="checkbox" id="${type}-${index}" value="${escapeHtml(item.category_name)}" ${checked ? 'checked' : ''} class="${type}-cb" onclick="event.stopPropagation(); onCheckboxClick('${type}', ${index})">
-                        <label for="${type}-${index}" title="${escapeHtml(item.category_name)}">${escapeHtml(parsed.cleanTitle || item.category_name)}</label>
-                    </div>
-                    ${badgesHtml ? `<div class="cat-badges">${badgesHtml}</div>` : ''}
-                </div>
+        // Categorize into groups separated by |
+        const groupsMap = {}; // groupName -> [ { item, index, parsed, checked } ]
+        items.forEach((item, index) => {
+            const parsed = extractCategoryGroup(item.category_name);
+            const checked = isSelected(type, item.category_name);
+            if (!groupsMap[parsed.group]) {
+                groupsMap[parsed.group] = [];
+            }
+            groupsMap[parsed.group].push({ item, index, parsed, checked });
+        });
+
+        // Sorted group keys (by category count descending)
+        const groupKeys = Object.keys(groupsMap).sort((a, b) => {
+            return groupsMap[b].length - groupsMap[a].length;
+        });
+
+        // Render Group Filter Pills
+        const activeGroup = state.activeGroupFilter[type] || 'ALL';
+        let pillsHtml = `
+            <button type="button" class="group-pill ${activeGroup === 'ALL' ? 'active' : ''}" onclick="filterByGroup('${type}', 'ALL')">
+                <span>🌐 All</span>
+                <span class="group-pill-count">${items.length}</span>
+            </button>
+        `;
+
+        groupKeys.forEach(gName => {
+            const count = groupsMap[gName].length;
+            const icon = getGroupIcon(gName);
+            const isActive = activeGroup === gName;
+            pillsHtml += `
+                <button type="button" class="group-pill ${isActive ? 'active' : ''}" onclick="filterByGroup('${type}', '${escapeJs(gName)}')">
+                    <span>${icon} ${escapeHtml(gName)}</span>
+                    <span class="group-pill-count">${count}</span>
+                </button>
             `;
         });
-        list.innerHTML = html;
+        if (pillsContainer) pillsContainer.innerHTML = pillsHtml;
+
+        // Render Cards (Grouped Sections vs Flat Grid)
+        list.className = 'list-container ' + (isGrouped ? 'grouped-mode' : 'flat-mode');
+
+        if (isGrouped) {
+            let groupsHtml = '';
+            groupKeys.forEach(gName => {
+                const groupItems = groupsMap[gName];
+                const cleanId = sanitizeGroupId(gName);
+                const icon = getGroupIcon(gName);
+                const isCollapsed = !!(state.collapsedGroups[type] && state.collapsedGroups[type][cleanId]);
+                const checkedCount = groupItems.filter(gi => gi.checked).length;
+                const isHiddenByPill = (activeGroup !== 'ALL' && activeGroup !== gName);
+
+                let cardsHtml = '';
+                groupItems.forEach(gi => {
+                    let badgesHtml = '';
+                    gi.parsed.badges.forEach(b => {
+                        badgesHtml += `<span class="cat-badge ${b.class}">${b.text}</span>`;
+                    });
+
+                    cardsHtml += `
+                        <div class="category-item ${gi.checked ? 'is-checked' : ''}" id="catItem_${type}_${gi.index}" data-name="${escapeHtml(gi.parsed.normalized.toLowerCase())}" data-group="${escapeHtml(gName.toLowerCase())}" onclick="toggleItem('${type}', ${gi.index}, '${cleanId}')">
+                            <div style="display:flex; align-items:center; min-width:0; flex:1; overflow:hidden;">
+                                <input type="checkbox" id="${type}-${gi.index}" value="${escapeHtml(gi.item.category_name)}" ${gi.checked ? 'checked' : ''} class="${type}-cb cb-group-${cleanId}" onclick="event.stopPropagation(); onCheckboxClick('${type}', ${gi.index}, '${cleanId}')">
+                                <label for="${type}-${gi.index}" title="${escapeHtml(gi.item.category_name)}">${escapeHtml(gi.parsed.cleanTitle || gi.item.category_name)}</label>
+                            </div>
+                            ${badgesHtml ? `<div class="cat-badges">${badgesHtml}</div>` : ''}
+                        </div>
+                    `;
+                });
+
+                groupsHtml += `
+                    <div class="category-group-section ${isCollapsed ? 'collapsed' : ''}" id="groupSec_${type}_${cleanId}" data-group-name="${escapeHtml(gName.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : ''}">
+                        <div class="category-group-header" onclick="toggleGroupCollapse('${type}', '${cleanId}')">
+                            <div class="group-header-left">
+                                <span class="group-toggle-arrow">▼</span>
+                                <span class="group-header-icon">${icon}</span>
+                                <span class="group-header-name">${escapeHtml(gName)}</span>
+                                <span class="group-header-badge">${groupItems.length} channels</span>
+                                <span class="group-header-ratio" id="groupRatio_${type}_${cleanId}">${checkedCount}/${groupItems.length}</span>
+                            </div>
+                            <div class="group-header-actions" onclick="event.stopPropagation()">
+                                <button type="button" class="btn-group-action" onclick="selectGroup('${type}', '${cleanId}', true)" title="Select all ${gName} channels">✓ Select Group</button>
+                                <button type="button" class="btn-group-action" onclick="selectGroup('${type}', '${cleanId}', false)" title="Clear all ${gName} channels">✕ Clear Group</button>
+                            </div>
+                        </div>
+                        <div class="category-group-grid" id="groupGrid_${type}_${cleanId}">
+                            ${cardsHtml}
+                        </div>
+                    </div>
+                `;
+            });
+            list.innerHTML = groupsHtml;
+        } else {
+            // Flat Grid mode
+            let flatHtml = '';
+            items.forEach((item, index) => {
+                const parsed = extractCategoryGroup(item.category_name);
+                const checked = isSelected(type, item.category_name);
+                const cleanId = sanitizeGroupId(parsed.group);
+                const isHiddenByPill = (activeGroup !== 'ALL' && activeGroup !== parsed.group);
+
+                let badgesHtml = '';
+                badgesHtml += `<span class="cat-badge badge-prefix">${escapeHtml(parsed.group)}</span>`;
+                parsed.badges.forEach(b => {
+                    badgesHtml += `<span class="cat-badge ${b.class}">${b.text}</span>`;
+                });
+
+                flatHtml += `
+                    <div class="category-item ${checked ? 'is-checked' : ''}" id="catItem_${type}_${index}" data-name="${escapeHtml(parsed.normalized.toLowerCase())}" data-group="${escapeHtml(parsed.group.toLowerCase())}" style="${isHiddenByPill ? 'display:none;' : ''}" onclick="toggleItem('${type}', ${index}, '${cleanId}')">
+                        <div style="display:flex; align-items:center; min-width:0; flex:1; overflow:hidden;">
+                            <input type="checkbox" id="${type}-${index}" value="${escapeHtml(item.category_name)}" ${checked ? 'checked' : ''} class="${type}-cb cb-group-${cleanId}" onclick="event.stopPropagation(); onCheckboxClick('${type}', ${index}, '${cleanId}')">
+                            <label for="${type}-${index}" title="${escapeHtml(item.category_name)}">${escapeHtml(parsed.cleanTitle || item.category_name)}</label>
+                        </div>
+                        ${badgesHtml ? `<div class="cat-badges">${badgesHtml}</div>` : ''}
+                    </div>
+                `;
+            });
+            list.innerHTML = flatHtml;
+        }
+
         updateCategoryCountBadge(type);
     }
 
-    function toggleItem(type, index) {
+    function toggleItem(type, index, cleanGroupId) {
         const cb = document.getElementById(`${type}-${index}`);
         const card = document.getElementById(`catItem_${type}_${index}`);
         if (cb) {
@@ -2959,19 +3452,115 @@
             if (card) {
                 card.classList.toggle('is-checked', cb.checked);
             }
+            if (cleanGroupId) updateGroupRatioBadge(type, cleanGroupId);
             updateCategoryCountBadge(type);
             markCategoryDirty(true);
         }
     }
 
-    function onCheckboxClick(type, index) {
+    function onCheckboxClick(type, index, cleanGroupId) {
         const cb = document.getElementById(`${type}-${index}`);
         const card = document.getElementById(`catItem_${type}_${index}`);
         if (cb && card) {
             card.classList.toggle('is-checked', cb.checked);
         }
+        if (cleanGroupId) updateGroupRatioBadge(type, cleanGroupId);
         updateCategoryCountBadge(type);
         markCategoryDirty(true);
+    }
+
+    function filterByGroup(type, groupName) {
+        if (!state.activeGroupFilter) state.activeGroupFilter = {};
+        state.activeGroupFilter[type] = groupName;
+
+        // Update active pill button
+        const pills = document.querySelectorAll(`#${type}GroupPills .group-pill`);
+        pills.forEach(p => {
+            const isMatch = (groupName === 'ALL' && p.innerText.includes('All')) ||
+                            (groupName !== 'ALL' && p.innerText.includes(groupName));
+            p.classList.toggle('active', isMatch);
+        });
+
+        // Filter group sections or flat cards
+        if (state.viewMode[type] !== 'flat') {
+            const sections = document.querySelectorAll(`#${type}List .category-group-section`);
+            sections.forEach(sec => {
+                if (groupName === 'ALL') {
+                    sec.style.display = '';
+                } else {
+                    const secGroup = (sec.dataset.groupName || '').toUpperCase();
+                    if (secGroup === groupName.toUpperCase()) {
+                        sec.style.display = '';
+                        sec.classList.remove('collapsed'); // auto-expand selected group
+                    } else {
+                        sec.style.display = 'none';
+                    }
+                }
+            });
+        } else {
+            const cards = document.querySelectorAll(`#${type}List .category-item`);
+            cards.forEach(card => {
+                if (groupName === 'ALL') {
+                    card.style.display = 'flex';
+                } else {
+                    const cardGroup = (card.dataset.group || '').toUpperCase();
+                    card.style.display = (cardGroup === groupName.toUpperCase()) ? 'flex' : 'none';
+                }
+            });
+        }
+    }
+
+    function selectGroup(type, cleanGroupId, check) {
+        const checkboxes = document.querySelectorAll(`#groupSec_${type}_${cleanGroupId} .${type}-cb, .cb-group-${cleanGroupId}`);
+        checkboxes.forEach(cb => {
+            cb.checked = check;
+            const card = cb.closest('.category-item');
+            if (card) {
+                card.classList.toggle('is-checked', check);
+            }
+        });
+
+        updateGroupRatioBadge(type, cleanGroupId);
+        updateCategoryCountBadge(type);
+        markCategoryDirty(true);
+
+        const groupHeader = document.querySelector(`#groupSec_${type}_${cleanGroupId} .group-header-name`);
+        const gName = groupHeader ? groupHeader.innerText : cleanGroupId;
+        showToast(`${check ? 'Selected all' : 'Cleared all'} ${checkboxes.length} categories in ${gName}`, check ? 'success' : 'info');
+    }
+
+    function toggleGroupCollapse(type, cleanGroupId) {
+        const sec = document.getElementById(`groupSec_${type}_${cleanGroupId}`);
+        if (!sec) return;
+        const isCollapsed = sec.classList.toggle('collapsed');
+        if (!state.collapsedGroups) state.collapsedGroups = {};
+        if (!state.collapsedGroups[type]) state.collapsedGroups[type] = {};
+        state.collapsedGroups[type][cleanGroupId] = isCollapsed;
+    }
+
+    function expandAllGroups(type, expand) {
+        const sections = document.querySelectorAll(`#${type}List .category-group-section`);
+        sections.forEach(sec => {
+            sec.classList.toggle('collapsed', !expand);
+            const id = (sec.id || '').replace(`groupSec_${type}_`, '');
+            if (id && state.collapsedGroups && state.collapsedGroups[type]) {
+                state.collapsedGroups[type][id] = !expand;
+            }
+        });
+    }
+
+    function toggleGroupedView(type) {
+        if (!state.viewMode) state.viewMode = {};
+        const current = state.viewMode[type] || 'grouped';
+        const next = current === 'grouped' ? 'flat' : 'grouped';
+        state.viewMode[type] = next;
+
+        const btn = document.getElementById(`${type}ToggleViewBtn`);
+        if (btn) {
+            btn.innerText = next === 'grouped' ? '📁 Grouped View' : '🗂️ Flat View';
+        }
+
+        renderList(type);
     }
 
     function escapeHtml(str) {
@@ -2985,26 +3574,72 @@
     }
 
     function filterList(type, query) {
-        query = query.toLowerCase();
-        const items = document.querySelectorAll(`#${type}List .category-item`);
-        items.forEach(item => {
-            if (item.dataset.name.includes(query)) {
-                item.style.display = 'flex';
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        query = (query || '').toLowerCase().trim();
+        const isGrouped = state.viewMode[type] !== 'flat';
+
+        if (isGrouped) {
+            const sections = document.querySelectorAll(`#${type}List .category-group-section`);
+            sections.forEach(sec => {
+                const groupName = (sec.dataset.groupName || '').toLowerCase();
+                const cleanQuery = query.replace(/[|:]+$/, '').trim();
+                const groupMatches = query.length > 0 && (groupName === query || groupName === cleanQuery || groupName.includes(query));
+                const cards = sec.querySelectorAll('.category-item');
+                let visibleCount = 0;
+
+                cards.forEach(card => {
+                    const cardName = (card.dataset.name || '').toLowerCase();
+                    if (!query || groupMatches || cardName.includes(query)) {
+                        card.style.display = 'flex';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+
+                if (!query) {
+                    const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || 'ALL';
+                    sec.style.display = (activePill === 'ALL' || activePill.toLowerCase() === groupName) ? '' : 'none';
+                } else if (visibleCount > 0) {
+                    sec.style.display = '';
+                    sec.classList.remove('collapsed'); // auto-expand to show matches
+                } else {
+                    sec.style.display = 'none';
+                }
+            });
+        } else {
+            const items = document.querySelectorAll(`#${type}List .category-item`);
+            items.forEach(item => {
+                const name = (item.dataset.name || '').toLowerCase();
+                const group = (item.dataset.group || '').toLowerCase();
+                if (!query || name.includes(query) || group.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
     }
 
     function selectAll(type, check) {
         const checkboxes = document.querySelectorAll(`.${type}-cb`);
         checkboxes.forEach(cb => {
             const card = cb.closest('.category-item');
-            if (card && card.style.display !== 'none') {
+            const sec = cb.closest('.category-group-section');
+            const isCardVisible = card && card.style.display !== 'none';
+            const isSecVisible = !sec || sec.style.display !== 'none';
+
+            if (isCardVisible && isSecVisible) {
                 cb.checked = check;
-                card.classList.toggle('is-checked', check);
+                if (card) card.classList.toggle('is-checked', check);
             }
         });
+
+        const ratioBadges = document.querySelectorAll(`[id^="groupRatio_${type}_"]`);
+        ratioBadges.forEach(badge => {
+            const cleanId = badge.id.replace(`groupRatio_${type}_`, '');
+            updateGroupRatioBadge(type, cleanId);
+        });
+
         updateCategoryCountBadge(type);
         markCategoryDirty(true);
     }

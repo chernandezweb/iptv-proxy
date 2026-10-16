@@ -52,19 +52,19 @@ var BuiltInEPGPresets = []EPGSourceItem{
 	{
 		ID:      "preset_ca_quebec",
 		Name:    "🇨🇦 Canada & Québec (epgshare01)",
-		URL:     "https://epgshare01.online/epgshare01/epg_ripper_CA1.xml.gz",
+		URL:     "https://epgshare01.online/epgshare01/epg_ripper_CA2.xml.gz",
 		Enabled: true,
 	},
 	{
 		ID:      "preset_ca_backup",
-		Name:    "🇨🇦 Canada Alternate (epgshare01)",
-		URL:     "https://epgshare01.online/epgshare01/epg_ripper_CA2.xml.gz",
+		Name:    "🇨🇦 Canada Alternate (epg.lat)",
+		URL:     "https://epg.lat/files/ca.xml.gz",
 		Enabled: false,
 	},
 	{
 		ID:      "preset_us",
 		Name:    "🇺🇸 United States (epgshare01)",
-		URL:     "https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz",
+		URL:     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
 		Enabled: false,
 	},
 	{
@@ -154,6 +154,24 @@ func (e *EPGEnricher) loadConfig() {
 		e.sources = items
 	} else {
 		e.sources = []EPGSourceItem{BuiltInEPGPresets[0]}
+		e.saveConfigUnlocked()
+	}
+
+	// Auto-migrate legacy/broken URLs from previous versions
+	migrated := false
+	for i := range e.sources {
+		if strings.Contains(e.sources[i].URL, "epg_ripper_CA1.xml.gz") {
+			e.sources[i].URL = "https://epgshare01.online/epgshare01/epg_ripper_CA2.xml.gz"
+			e.sources[i].LastError = ""
+			migrated = true
+		}
+		if strings.Contains(e.sources[i].URL, "epg_ripper_US1.xml.gz") {
+			e.sources[i].URL = "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz"
+			e.sources[i].LastError = ""
+			migrated = true
+		}
+	}
+	if migrated {
 		e.saveConfigUnlocked()
 	}
 }
@@ -325,6 +343,52 @@ func (e *EPGEnricher) GetEPGChannels() []EPGChannel {
 	return out
 }
 
+// fetchEPGStream downloads an external EPG XMLTV file.
+// It tries direct connection first (bypassing ALL_PROXY / VPN) to avoid Cloudflare 503 VPN blocks,
+// and falls back to the configured proxy client if direct connection fails.
+func fetchEPGStream(urlStr string) (io.ReadCloser, error) {
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+	// 1. Try Direct connection first (bypassing ALL_PROXY / Gluetun to prevent Cloudflare 503 VPN blocks)
+	directClient := &http.Client{
+		Timeout: 90 * time.Second,
+		Transport: &http.Transport{
+			Proxy:               nil,
+			TLSHandshakeTimeout: 15 * time.Second,
+		},
+	}
+	req1, err1 := http.NewRequest("GET", urlStr, nil)
+	if err1 == nil {
+		req1.Header.Set("User-Agent", ua)
+		req1.Header.Set("Accept", "*/*")
+		resp1, errResp1 := directClient.Do(req1)
+		if errResp1 == nil {
+			if resp1.StatusCode == http.StatusOK {
+				return resp1.Body, nil
+			}
+			resp1.Body.Close()
+		}
+	}
+
+	// 2. Fallback to default client (which routes through proxy if configured)
+	proxyClient := &http.Client{Timeout: 90 * time.Second}
+	req2, err2 := http.NewRequest("GET", urlStr, nil)
+	if err2 != nil {
+		return nil, err2
+	}
+	req2.Header.Set("User-Agent", ua)
+	req2.Header.Set("Accept", "*/*")
+	resp2, errResp2 := proxyClient.Do(req2)
+	if errResp2 != nil {
+		return nil, errResp2
+	}
+	if resp2.StatusCode != http.StatusOK {
+		resp2.Body.Close()
+		return nil, fmt.Errorf("HTTP %s", resp2.Status)
+	}
+	return resp2.Body, nil
+}
+
 // RefreshAll downloads and parses all enabled external XMLTV sources.
 func (e *EPGEnricher) RefreshAll(force bool) {
 	e.mu.Lock()
@@ -348,7 +412,6 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 		}
 	}()
 
-	client := &http.Client{Timeout: 90 * time.Second}
 	newProgMap := make(map[string][]EPGProgram)
 	newChannels := make(map[string]EPGChannel)
 	newIndex := make(map[string]string)
@@ -364,26 +427,19 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 		}
 
 		log.Printf("[iptv-proxy] Fetching external EPG source %q (%s)...", s.Name, s.URL)
-		req, errReq := http.NewRequest("GET", s.URL, nil)
-		if errReq != nil {
-			e.updateSourceStatus(s.ID, 0, 0, errReq.Error())
-			continue
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IPTV-Proxy-EPG/1.0")
-
-		resp, errResp := client.Do(req)
-		if errResp != nil {
-			log.Printf("[iptv-proxy] Failed to download EPG %s: %v", s.URL, errResp)
-			e.updateSourceStatus(s.ID, 0, 0, errResp.Error())
+		body, errFetch := fetchEPGStream(s.URL)
+		if errFetch != nil {
+			log.Printf("[iptv-proxy] Failed to download EPG %s: %v", s.URL, errFetch)
+			e.updateSourceStatus(s.ID, 0, 0, errFetch.Error())
 			continue
 		}
 
-		var reader io.Reader = resp.Body
+		var reader io.Reader = body
 		// Transparently decompress gzip
 		bufHeader := make([]byte, 2)
-		nRead, _ := io.ReadFull(resp.Body, bufHeader)
+		nRead, _ := io.ReadFull(body, bufHeader)
 		if nRead == 2 && bufHeader[0] == 0x1f && bufHeader[1] == 0x8b {
-			combined := io.MultiReader(bytes.NewReader(bufHeader), resp.Body)
+			combined := io.MultiReader(bytes.NewReader(bufHeader), body)
 			gzReader, gzErr := gzip.NewReader(combined)
 			if gzErr == nil {
 				reader = gzReader
@@ -392,11 +448,11 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 				reader = combined
 			}
 		} else if nRead > 0 {
-			reader = io.MultiReader(bytes.NewReader(bufHeader[:nRead]), resp.Body)
+			reader = io.MultiReader(bytes.NewReader(bufHeader[:nRead]), body)
 		}
 
 		cCount, pCount, errParse := parseXMLTVStream(reader, windowStart, windowEnd, newProgMap, newChannels, newIndex)
-		resp.Body.Close()
+		body.Close()
 
 		if errParse != nil {
 			log.Printf("[iptv-proxy] Warning parsing XMLTV %s: %v (indexed %d channels, %d programs)", s.URL, errParse, cCount, pCount)

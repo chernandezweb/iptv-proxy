@@ -8,7 +8,7 @@ RUN git rev-parse HEAD > /app_commit.txt 2>/dev/null || (test -f .git/refs/heads
 RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -ldflags="-s -w" -o iptv-proxy .
 
 FROM alpine:3
-RUN apk add --no-cache ca-certificates util-linux && mkdir -p /data
+RUN apk add --no-cache ca-certificates util-linux ffmpeg && mkdir -p /data
 ENV DATA_DIR=/data
 ENV GOMEMLIMIT=512MiB
 VOLUME ["/data"]

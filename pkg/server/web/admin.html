@@ -2447,7 +2447,7 @@
                 <h3 style="margin:0; font-size:1.15rem; display:flex; align-items:center; gap:0.5rem;" id="inspModalTitle">
                     📺 Stream Inspector &amp; Web Player
                 </h3>
-                <span id="inspStatusBadge" class="url-pill online" style="font-size:0.75rem;">READY</span>
+                <span id="inspStatusBadge" class="url-pill online" style="font-size:0.75rem; color:#ffffff !important; font-weight:700;">READY</span>
             </div>
             <button type="button" class="btn btn-secondary" onclick="StreamInspector.close()" style="padding:0.35rem 0.65rem;">✕</button>
         </div>
@@ -2471,15 +2471,19 @@
             </div>
             <!-- Quick URL input bar -->
             <div style="padding:0.75rem 1.15rem; background:var(--bg-card-subtle); border-top:1px solid var(--border); display:flex; gap:0.5rem; align-items:center;">
-                <input type="text" id="inspCustomUrl" class="form-control" placeholder="Stream URL (e.g. /live/username/password/123.ts or http://...)" style="font-size:0.8rem; font-family:monospace; flex:1;">
-                <button type="button" class="btn" style="padding:0.4rem 0.85rem; font-size:0.82rem;" onclick="StreamInspector.open(document.getElementById('inspCustomUrl').value, 'Custom Stream')">▶ Play</button>
+                <input type="text" id="inspCustomUrl" class="form-control" placeholder="Stream URL (e.g. /live/username/password/123.ts, /movie/... or http://...)" style="font-size:0.8rem; font-family:monospace; flex:1;" onkeydown="if(event.key==='Enter')StreamInspector.playCustom()">
+                <button type="button" class="btn" style="padding:0.4rem 0.85rem; font-size:0.82rem;" onclick="StreamInspector.playCustom()">▶ Play</button>
             </div>
         </div>
-        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-size:0.78rem; color:var(--text-muted);">
-                Powered by mpegts.js &amp; hls.js with native MSE demuxing
+        <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <button type="button" class="btn btn-secondary" style="font-size:0.75rem; padding:0.35rem 0.65rem;" onclick="StreamInspector.copyCurrentUrl()">📋 Copy Stream URL</button>
+                <button type="button" class="btn btn-secondary" style="font-size:0.75rem; padding:0.35rem 0.65rem;" onclick="StreamInspector.openInVLC()">🚀 Open in VLC</button>
             </div>
-            <button type="button" class="btn btn-secondary" onclick="StreamInspector.close()">Close</button>
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted);">Powered by mpegts.js &amp; hls.js with native MSE &amp; fragmented MP4</span>
+                <button type="button" class="btn btn-secondary" onclick="StreamInspector.close()">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -3358,21 +3362,27 @@
             return groupsMap[b].length - groupsMap[a].length;
         });
 
-        // Determine active group (no "ALL" pill)
-        let activeGroup = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
-        if (!activeGroup || activeGroup === 'ALL' || !groupsMap[activeGroup]) {
-            // Default to US if available, otherwise first group by count
-            activeGroup = groupKeys.includes('US') ? 'US' : (groupKeys[0] || 'GENERAL');
+        // Determine active group (default to 'ALL')
+        let activeGroup = (state.activeGroupFilter && state.activeGroupFilter[type]) || 'ALL';
+        if (activeGroup !== 'ALL' && !groupsMap[activeGroup]) {
+            activeGroup = 'ALL';
             if (!state.activeGroupFilter) state.activeGroupFilter = {};
             state.activeGroupFilter[type] = activeGroup;
         }
 
-        // Render Group Filter Pills (NO "All" pill)
-        let pillsHtml = '';
+        const isAll = (activeGroup === 'ALL');
+
+        // Render Group Filter Pills
+        let pillsHtml = `
+            <button type="button" class="group-pill ${isAll ? 'active' : ''}" data-group="ALL" onclick="filterByGroup('${type}', 'ALL')">
+                <span>🌐 ALL GROUPS</span>
+                <span class="group-pill-count">${items.length}</span>
+            </button>
+        `;
         groupKeys.forEach(gName => {
             const count = groupsMap[gName].length;
             const icon = getGroupIcon(gName);
-            const isActive = activeGroup.toUpperCase() === gName.toUpperCase();
+            const isActive = !isAll && (activeGroup.toUpperCase() === gName.toUpperCase());
             const iconPart = icon ? `<span>${icon}</span> ` : '';
             pillsHtml += `
                 <button type="button" class="group-pill ${isActive ? 'active' : ''}" data-group="${escapeHtml(gName)}" onclick="filterByGroup('${type}', '${escapeJs(gName)}')">
@@ -3395,7 +3405,7 @@
                 const displayIcon = icon || '📺';
                 const isCollapsed = !!(state.collapsedGroups[type] && state.collapsedGroups[type][cleanId]);
                 const checkedCount = groupItems.filter(gi => gi.checked).length;
-                const isHiddenByPill = (activeGroup.toUpperCase() !== gName.toUpperCase());
+                const isHiddenByPill = !isAll && (activeGroup.toUpperCase() !== gName.toUpperCase());
 
                 let cardsHtml = '';
                 groupItems.forEach(gi => {
@@ -3444,7 +3454,7 @@
                 const parsed = extractCategoryGroup(item.category_name);
                 const checked = isSelected(type, item.category_name);
                 const cleanId = sanitizeGroupId(parsed.group);
-                const isHiddenByPill = (activeGroup.toUpperCase() !== parsed.group.toUpperCase());
+                const isHiddenByPill = !isAll && (activeGroup.toUpperCase() !== parsed.group.toUpperCase());
 
                 let badgesHtml = '';
                 badgesHtml += `<span class="cat-badge badge-prefix">${escapeHtml(parsed.group)}</span>`;
@@ -3496,6 +3506,7 @@
     function filterByGroup(type, groupName) {
         if (!state.activeGroupFilter) state.activeGroupFilter = {};
         state.activeGroupFilter[type] = groupName;
+        const isAll = (groupName === 'ALL');
 
         // Reset search input on switching group pill
         const searchInput = document.getElementById(`${type}SearchInput`);
@@ -3515,9 +3526,11 @@
             const sections = document.querySelectorAll(`#${type}List .category-group-section`);
             sections.forEach(sec => {
                 const secGroup = (sec.dataset.groupName || '').toUpperCase();
-                if (secGroup === groupName.toUpperCase()) {
+                if (isAll || secGroup === groupName.toUpperCase()) {
                     sec.style.display = 'block';
-                    sec.classList.remove('collapsed'); // auto-expand selected group
+                    if (!isAll) {
+                        sec.classList.remove('collapsed'); // auto-expand selected group
+                    }
                     const cards = sec.querySelectorAll('.category-item');
                     cards.forEach(c => c.style.display = 'flex');
                 } else {
@@ -3528,7 +3541,7 @@
             const cards = document.querySelectorAll(`#${type}List .category-item`);
             cards.forEach(card => {
                 const cardGroup = (card.dataset.group || '').toUpperCase();
-                card.style.display = (cardGroup === groupName.toUpperCase()) ? 'flex' : 'none';
+                card.style.display = (isAll || cardGroup === groupName.toUpperCase()) ? 'flex' : 'none';
             });
         }
 
@@ -3623,8 +3636,8 @@
                 });
 
                 if (!query) {
-                    const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
-                    sec.style.display = (activePill.toLowerCase() === groupName) ? 'block' : 'none';
+                    const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || 'ALL';
+                    sec.style.display = (activePill === 'ALL' || activePill.toLowerCase() === groupName) ? 'block' : 'none';
                 } else if (visibleCount > 0) {
                     sec.style.display = 'block';
                     sec.classList.remove('collapsed'); // auto-expand to show matches
@@ -3634,12 +3647,12 @@
             });
         } else {
             const items = document.querySelectorAll(`#${type}List .category-item`);
-            const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || '';
+            const activePill = (state.activeGroupFilter && state.activeGroupFilter[type]) || 'ALL';
             items.forEach(item => {
                 const name = (item.dataset.name || '').toLowerCase();
                 const group = (item.dataset.group || '').toLowerCase();
                 if (!query) {
-                    item.style.display = (!activePill || activePill.toLowerCase() === group) ? 'flex' : 'none';
+                    item.style.display = (activePill === 'ALL' || !activePill || activePill.toLowerCase() === group) ? 'flex' : 'none';
                 } else if (name.includes(query) || group.includes(query)) {
                     item.style.display = 'flex';
                 } else {
@@ -5556,6 +5569,8 @@ services:<br>
 
         const el = (id) => document.getElementById(id);
 
+        let currentDisplayUrl = '';
+
         function resetUI(title, protocol) {
             el('inspModalTitle').textContent = `📺 ` + (title || 'Stream Inspector');
             el('inspProto').textContent = protocol;
@@ -5565,14 +5580,16 @@ services:<br>
             el('inspBitrate').textContent = '0.00 Mbps';
             el('inspHealth').textContent = '0.0s / 0 frames';
             el('inspWarning').style.display = 'none';
-            setStatus('BUFFERING', '#0284c7');
+            setStatus('BUFFERING', '#0284c7', '#ffffff');
         }
 
-        function setStatus(text, bg) {
+        function setStatus(text, bg, textColor = '#ffffff') {
             const s = el('inspStatusBadge');
             if (s) {
                 s.textContent = text;
                 s.style.background = bg;
+                s.style.setProperty('color', textColor, 'important');
+                s.style.fontWeight = '700';
             }
         }
 
@@ -5647,6 +5664,7 @@ services:<br>
         function open(streamUrl, title, inspectApiUrl) {
             if (!streamUrl) return;
             close(false);
+            currentDisplayUrl = streamUrl;
             const modal = el('streamInspectorModal');
             if (modal) modal.style.display = 'flex';
             el('inspCustomUrl').value = streamUrl;
@@ -5791,12 +5809,51 @@ services:<br>
                 video.load();
             }
             if (hideModal) {
+                currentDisplayUrl = '';
                 const modal = el('streamInspectorModal');
                 if (modal) modal.style.display = 'none';
             }
         }
 
-        return { open, close, promptUrl, inspectRelay, inspectDirect };
+        function copyCurrentUrl() {
+            const url = currentDisplayUrl || (el('inspCustomUrl') ? el('inspCustomUrl').value : '');
+            if (!url) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(() => {
+                    showToast('📋 Stream URL copied to clipboard!', 'success');
+                }).catch(() => {
+                    prompt('Copy stream URL:', url);
+                });
+            } else {
+                prompt('Copy stream URL:', url);
+            }
+        }
+
+        function openInVLC() {
+            const url = currentDisplayUrl || (el('inspCustomUrl') ? el('inspCustomUrl').value : '');
+            if (!url) return;
+            window.location.href = `vlc://${url}`;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(() => {
+                    showToast('🚀 Opening VLC & copied stream URL!', 'info');
+                });
+            }
+        }
+
+        function playCustom() {
+            const raw = (el('inspCustomUrl').value || '').trim();
+            if (!raw) return;
+            let inspectApiUrl = '';
+            if (raw.startsWith('http://') || raw.startsWith('https://')) {
+                inspectApiUrl = `${window.location.origin}/admin/api/inspect?url=${encodeURIComponent(raw)}`;
+            } else {
+                const clean = raw.startsWith('/') ? raw : '/' + raw;
+                inspectApiUrl = `${window.location.origin}/admin/api/inspect?url=${encodeURIComponent(clean)}`;
+            }
+            open(raw, 'Custom Stream', inspectApiUrl);
+        }
+
+        return { open, close, promptUrl, inspectRelay, inspectDirect, playCustom, copyCurrentUrl, openInVLC };
     })();
 
     // EPG Sources & Guide Enrichment Management

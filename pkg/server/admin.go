@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -967,19 +968,27 @@ func (c *Config) adminInspectStream(ctx *gin.Context) {
 		streamID = ctx.Query("stream_id")
 	}
 	rawURL := ctx.Query("url")
-	if streamID == "" && rawURL != "" {
-		trimmed := strings.Trim(rawURL, "/")
+	if rawURL != "" {
+		checkPath := rawURL
+		if parsedP, errP := url.Parse(rawURL); errP == nil && parsedP.Path != "" {
+			checkPath = parsedP.Path
+		}
+		trimmed := strings.Trim(checkPath, "/")
 		parts := strings.Split(trimmed, "/")
 		if len(parts) >= 2 {
-			streamType = parts[0]
-			streamID = parts[len(parts)-1]
-		} else if len(parts) == 1 {
+			if parts[0] == "live" || parts[0] == "movie" || parts[0] == "series" {
+				streamType = parts[0]
+				if streamID == "" {
+					streamID = parts[len(parts)-1]
+				}
+			}
+		} else if len(parts) == 1 && streamID == "" {
 			streamID = parts[0]
 		}
 	}
 
 	rawID := streamID
-	for _, sfx := range []string{".ts", ".m3u8", ".mp4", ".mkv", ".avi"} {
+	for _, sfx := range []string{".ts", ".m3u8", ".mp4", ".mkv", ".avi", ".webm"} {
 		rawID = strings.TrimSuffix(rawID, sfx)
 	}
 
@@ -1014,6 +1023,39 @@ func (c *Config) adminInspectStream(ctx *gin.Context) {
 		}
 	}
 	reqPath := fmt.Sprintf("%s/%s/%s/%s/%s%s", base, streamType, targetProv.XtreamUser, targetProv.XtreamPassword, origID, ext)
+
+	// 3. For MKV movies & series: remux to fragmented MP4 on the fly if ffmpeg is available
+	// Matroska (.mkv) is not supported natively by HTML5 <video> in browsers.
+	// Remuxing with -c:v copy -c:a aac produces a fragmented MP4 that all browsers play with 0% CPU!
+	isMKV := strings.HasSuffix(strings.ToLower(reqPath), ".mkv") || strings.HasSuffix(strings.ToLower(lookupID), ".mkv")
+	if (streamType == "movie" || streamType == "series") && isMKV {
+		if ffmpegPath, errLook := exec.LookPath("ffmpeg"); errLook == nil {
+			log.Printf("[iptv-proxy] Admin Inspector: remuxing MKV to MP4 container via ffmpeg: %s", reqPath)
+			ctx.Header("Content-Type", "video/mp4")
+			ctx.Header("Access-Control-Allow-Origin", "*")
+			ctx.Header("Cache-Control", "no-cache, no-store")
+			ctx.Status(http.StatusOK)
+
+			cmd := exec.CommandContext(ctx.Request.Context(), ffmpegPath,
+				"-hide_banner",
+				"-loglevel", "error",
+				"-i", reqPath,
+				"-c:v", "copy",
+				"-c:a", "aac",
+				"-f", "mp4",
+				"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+				"pipe:1",
+			)
+			cmd.Stdout = ctx.Writer
+			cmd.Stderr = os.Stderr
+			if errRun := cmd.Run(); errRun == nil {
+				return
+			}
+			log.Printf("[iptv-proxy] ffmpeg remux ended or exited: %v", errRun)
+			return
+		}
+	}
+
 	parsedURL, err := url.Parse(reqPath)
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err)

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,12 +26,14 @@ type UserItem struct {
 
 // UserSlot represents an active streaming session for a user.
 type UserSlot struct {
-	ID        string             `json:"id"`
-	IP        string             `json:"ip"`
-	StreamID  string             `json:"stream_id"`
-	StreamURL string             `json:"stream_url"`
-	StartedAt time.Time          `json:"started_at"`
-	Cancel    context.CancelFunc `json:"-"`
+	ID           string             `json:"id"`
+	IP           string             `json:"ip"`
+	StreamID     string             `json:"stream_id"`
+	StreamURL    string             `json:"stream_url"`
+	StartedAt    time.Time          `json:"started_at"`
+	LastActiveAt time.Time          `json:"last_active_at"`
+	ActiveReqs   int                `json:"-"`
+	Cancel       context.CancelFunc `json:"-"`
 }
 
 // UserSlots tracks active concurrent streaming slots for a user.
@@ -39,66 +42,128 @@ type UserSlots struct {
 	slots []*UserSlot
 }
 
+const sessionGracePeriod = 20 * time.Second
+
+func cleanStreamID(id string) string {
+	id = strings.TrimSpace(id)
+	for _, sfx := range []string{".ts", ".m3u8", ".mp4", ".mkv", ".avi", ".webm"} {
+		id = strings.TrimSuffix(id, sfx)
+	}
+	return id
+}
+
+func isSameStream(idA, urlA, idB, urlB string) bool {
+	cA := cleanStreamID(idA)
+	cB := cleanStreamID(idB)
+	if cA != "" && cB != "" && cA == cB {
+		return true
+	}
+	if urlA != "" && urlB != "" {
+		if urlA == urlB || filepath.Base(urlA) == filepath.Base(urlB) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *UserSlots) pruneExpiredUnlocked() {
+	now := time.Now()
+	var kept []*UserSlot
+	for _, sl := range s.slots {
+		if sl.ActiveReqs > 0 || now.Sub(sl.LastActiveAt) <= sessionGracePeriod {
+			kept = append(kept, sl)
+		} else {
+			if sl.Cancel != nil {
+				sl.Cancel()
+			}
+		}
+	}
+	s.slots = kept
+}
+
 // ActiveCount returns current active streaming connections.
 func (s *UserSlots) ActiveCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneExpiredUnlocked()
 	return len(s.slots)
 }
 
 // Acquire attempts to claim a streaming slot. If max > 0 and limit is reached:
-// - If the request is from the same IP (channel switch), the oldest stream from that IP is cancelled and replaced.
+// - If the request is from the same IP continuing the same stream (VOD chunk / live reconnect), it reuses the session.
+// - If from the same IP switching to a different stream, the old stream is replaced.
 // - If from a different IP (concurrent limit reached), returns false.
 func (s *UserSlots) Acquire(maxLimit int, clientIP string, streamID, streamURL string, cancel context.CancelFunc) (*UserSlot, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if maxLimit > 0 && len(s.slots) >= maxLimit {
-		// Look for an existing slot from the SAME IP address (channel switch on same device)
-		sameIPIdx := -1
-		for i, sl := range s.slots {
-			if sl.IP == clientIP {
-				sameIPIdx = i
-				break
-			}
-		}
+	s.pruneExpiredUnlocked()
 
-		if sameIPIdx >= 0 {
-			// Gracefully take over the slot from the same device
-			old := s.slots[sameIPIdx]
-			if old.Cancel != nil {
-				old.Cancel()
+	// 1. Check if same device is continuing to watch the same stream (VOD range chunk or live reconnect)
+	for _, sl := range s.slots {
+		if sl.IP == clientIP && isSameStream(sl.StreamID, sl.StreamURL, streamID, streamURL) {
+			sl.LastActiveAt = time.Now()
+			sl.ActiveReqs++
+			if cancel != nil {
+				sl.Cancel = cancel
 			}
-			s.slots = append(s.slots[:sameIPIdx], s.slots[sameIPIdx+1:]...)
-			log.Printf("[iptv-proxy] User stream switch: replaced oldest stream from IP %s", clientIP)
-		} else {
-			// Limit exceeded by another device/IP
-			return nil, false
+			if streamURL != "" {
+				sl.StreamURL = streamURL
+			}
+			return sl, true
 		}
 	}
 
+	// 2. Check if same device switched to a different stream (replace old slot)
+	sameIPIdx := -1
+	for i, sl := range s.slots {
+		if sl.IP == clientIP {
+			sameIPIdx = i
+			break
+		}
+	}
+
+	if sameIPIdx >= 0 {
+		old := s.slots[sameIPIdx]
+		if old.Cancel != nil {
+			old.Cancel()
+		}
+		s.slots = append(s.slots[:sameIPIdx], s.slots[sameIPIdx+1:]...)
+		log.Printf("[iptv-proxy] User stream switch: IP %s changed from %s to %s", clientIP, old.StreamID, streamID)
+	} else if maxLimit > 0 && len(s.slots) >= maxLimit {
+		// Limit exceeded by another device/IP
+		return nil, false
+	}
+
+	// 3. Create new session
+	now := time.Now()
 	slot := &UserSlot{
-		ID:        fmt.Sprintf("slot_%d", time.Now().UnixNano()),
-		IP:        clientIP,
-		StreamID:  streamID,
-		StreamURL: streamURL,
-		StartedAt: time.Now(),
-		Cancel:    cancel,
+		ID:           fmt.Sprintf("slot_%d", now.UnixNano()),
+		IP:           clientIP,
+		StreamID:     streamID,
+		StreamURL:    streamURL,
+		StartedAt:    now,
+		LastActiveAt: now,
+		ActiveReqs:   1,
+		Cancel:       cancel,
 	}
 	s.slots = append(s.slots, slot)
 	return slot, true
 }
 
-// Release frees an active stream slot.
+// Release marks an active stream request finished while preserving the session during grace period.
 func (s *UserSlots) Release(slot *UserSlot) {
 	if slot == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i, sl := range s.slots {
+	for _, sl := range s.slots {
 		if sl == slot || sl.ID == slot.ID {
-			s.slots = append(s.slots[:i], s.slots[i+1:]...)
+			if sl.ActiveReqs > 0 {
+				sl.ActiveReqs--
+			}
+			sl.LastActiveAt = time.Now()
 			return
 		}
 	}
@@ -108,6 +173,7 @@ func (s *UserSlots) Release(slot *UserSlot) {
 func (s *UserSlots) GetActiveSlots() []UserSlot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneExpiredUnlocked()
 	res := make([]UserSlot, len(s.slots))
 	for i, sl := range s.slots {
 		res[i] = *sl

@@ -1046,22 +1046,27 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 			return nil, httpcode, err
 		}
 
-		if c.epgEnricher != nil && httpcode == http.StatusOK && len(resp) > 0 {
-			chanName, epgID, _ := c.LookupStreamMetadata(streamID)
-			var epgData map[string]interface{}
-			if errJson := json.Unmarshal(resp, &epgData); errJson == nil {
-				rawListings, _ := epgData["epg_listings"].([]interface{})
-				enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawListings)
-				epgData["epg_listings"] = enriched
-				if modifiedBytes, errM := json.Marshal(epgData); errM == nil {
-					resp = modifiedBytes
-				}
-			} else {
-				var rawArr []interface{}
-				if errArr := json.Unmarshal(resp, &rawArr); errArr == nil {
-					enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawArr)
-					if modifiedBytes, errM := json.Marshal(enriched); errM == nil {
-						resp = modifiedBytes
+		if c.epgEnricher != nil && httpcode == http.StatusOK && resp != nil {
+			meta, ok := c.LookupStreamMetadata(streamID)
+			chanName := ""
+			epgID := ""
+			if ok {
+				chanName = meta.Name
+				epgID = meta.EPGChannelID
+			}
+
+			if respBytes, errM := json.Marshal(resp); errM == nil && len(respBytes) > 0 {
+				var epgData map[string]interface{}
+				if errJson := json.Unmarshal(respBytes, &epgData); errJson == nil {
+					rawListings, _ := epgData["epg_listings"].([]interface{})
+					enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawListings)
+					epgData["epg_listings"] = enriched
+					resp = epgData
+				} else {
+					var rawArr []interface{}
+					if errArr := json.Unmarshal(respBytes, &rawArr); errArr == nil {
+						enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawArr)
+						resp = enriched
 					}
 				}
 			}

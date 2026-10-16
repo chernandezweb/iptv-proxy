@@ -875,13 +875,13 @@ func (c *Config) adminGetStreams(ctx *gin.Context) {
 		for user, slots := range allSlots {
 			for _, sl := range slots {
 				dur := time.Since(sl.StartedAt).Truncate(time.Second).String()
-				chanName, _, _ := c.LookupStreamMetadata(sl.StreamID)
+				meta, _ := c.LookupStreamMetadata(sl.StreamID)
 				sessions = append(sessions, ActiveStreamSession{
 					Username:    user,
 					IP:          sl.IP,
 					StreamID:    sl.StreamID,
 					StreamURL:   sl.StreamURL,
-					ChannelName: chanName,
+					ChannelName: meta.Name,
 					StartedAt:   sl.StartedAt,
 					Duration:    dur,
 				})

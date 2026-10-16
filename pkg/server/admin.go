@@ -108,6 +108,12 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.GET("/api/streams", c.adminGetStreams)
 	admin.GET("/api/stream-relay", c.adminGetStreamRelay)
 	admin.POST("/api/stream-relay", c.adminSaveStreamRelay)
+	admin.GET("/api/inspect", c.adminInspectStream)
+	admin.GET("/api/inspect/:type/:id", c.adminInspectStream)
+	admin.GET("/api/epg-sources", c.adminGetEPGSources)
+	admin.POST("/api/epg-sources", c.adminSaveEPGSources)
+	admin.DELETE("/api/epg-sources/:id", c.adminDeleteEPGSource)
+	admin.POST("/api/epg-sources/refresh", c.adminRefreshEPGSources)
 	admin.GET("/api/user-agent-settings", c.adminGetUserAgentSettings)
 	admin.POST("/api/user-agent-settings", c.adminSaveUserAgentSettings)
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
@@ -853,12 +859,13 @@ func (c *Config) adminDeleteUser(ctx *gin.Context) {
 }
 
 type ActiveStreamSession struct {
-	Username  string    `json:"username"`
-	IP        string    `json:"ip"`
-	StreamID  string    `json:"stream_id"`
-	StreamURL string    `json:"stream_url"`
-	StartedAt time.Time `json:"started_at"`
-	Duration  string    `json:"duration"`
+	Username    string    `json:"username"`
+	IP          string    `json:"ip"`
+	StreamID    string    `json:"stream_id"`
+	StreamURL   string    `json:"stream_url"`
+	ChannelName string    `json:"channel_name,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	Duration    string    `json:"duration"`
 }
 
 func (c *Config) adminGetStreams(ctx *gin.Context) {
@@ -868,13 +875,15 @@ func (c *Config) adminGetStreams(ctx *gin.Context) {
 		for user, slots := range allSlots {
 			for _, sl := range slots {
 				dur := time.Since(sl.StartedAt).Truncate(time.Second).String()
+				chanName, _, _ := c.LookupStreamMetadata(sl.StreamID)
 				sessions = append(sessions, ActiveStreamSession{
-					Username:  user,
-					IP:        sl.IP,
-					StreamID:  sl.StreamID,
-					StreamURL: sl.StreamURL,
-					StartedAt: sl.StartedAt,
-					Duration:  dur,
+					Username:    user,
+					IP:          sl.IP,
+					StreamID:    sl.StreamID,
+					StreamURL:   sl.StreamURL,
+					ChannelName: chanName,
+					StartedAt:   sl.StartedAt,
+					Duration:    dur,
 				})
 			}
 		}
@@ -945,6 +954,141 @@ func (c *Config) adminSaveStreamRelay(ctx *gin.Context) {
 		"status":  "success",
 		"enabled": req.Enabled,
 		"message": fmt.Sprintf("Streaming mode switched to: %s", modeStr),
+	})
+}
+
+func (c *Config) adminInspectStream(ctx *gin.Context) {
+	streamType := ctx.Param("type")
+	if streamType == "" {
+		streamType = ctx.DefaultQuery("stream_type", "live")
+	}
+	streamID := ctx.Param("id")
+	if streamID == "" {
+		streamID = ctx.Query("stream_id")
+	}
+	rawURL := ctx.Query("url")
+	if streamID == "" && rawURL != "" {
+		trimmed := strings.Trim(rawURL, "/")
+		parts := strings.Split(trimmed, "/")
+		if len(parts) >= 2 {
+			streamType = parts[0]
+			streamID = parts[len(parts)-1]
+		} else if len(parts) == 1 {
+			streamID = parts[0]
+		}
+	}
+
+	rawID := strings.TrimSuffix(streamID, ".ts")
+	rawID = strings.TrimSuffix(rawID, ".m3u8")
+
+	if rawID == "" && rawURL == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Missing stream_id or url parameter"})
+		return
+	}
+
+	// 1. Try attaching to an existing running multiplexed relay
+	if c.streamHub != nil && c.streamHub.TryAttachExistingRelay(ctx, rawID, streamID, rawURL) {
+		return
+	}
+
+	// 2. Try tapping into an active Direct 1:1 stream in RAM (0 extra provider connections!)
+	if c.streamHub != nil && c.streamHub.TryAttachDirectTap(ctx, rawID, streamID, rawURL) {
+		return
+	}
+
+	// 3. Fallback: stream directly from provider without consuming any client user slot
+	targetProv, origID := c.ResolveTargetStream(streamType, rawID)
+	base := strings.TrimRight(targetProv.XtreamBaseURL, "/")
+	ext := ""
+	if !strings.Contains(origID, ".") {
+		if streamType == "live" {
+			ext = ".ts"
+		} else if streamType == "movie" || streamType == "series" {
+			ext = ".mp4"
+		}
+	}
+	reqPath := fmt.Sprintf("%s/%s/%s/%s/%s%s", base, streamType, targetProv.XtreamUser, targetProv.XtreamPassword, origID, ext)
+	parsedURL, err := url.Parse(reqPath)
+	if err != nil {
+		ctx.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	log.Printf("[iptv-proxy] Admin Inspector: fallback upstream connection for %s -> %s", rawID, reqPath)
+	c.xtreamStream(ctx, parsedURL)
+}
+
+func (c *Config) adminGetEPGSources(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusOK, gin.H{
+			"sources":       []EPGSourceItem{},
+			"presets":       BuiltInEPGPresets,
+			"is_refreshing": false,
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"sources":       c.epgEnricher.GetSources(),
+		"presets":       BuiltInEPGPresets,
+		"is_refreshing": c.epgEnricher.IsRefreshing(),
+	})
+}
+
+func (c *Config) adminSaveEPGSources(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "EPG enricher not initialized"})
+		return
+	}
+
+	var payload struct {
+		Sources []EPGSourceItem `json:"sources"`
+		Name    string          `json:"name"`
+		URL     string          `json:"url"`
+	}
+
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if len(payload.Sources) > 0 {
+		c.epgEnricher.SaveSources(payload.Sources)
+	} else if payload.URL != "" {
+		name := payload.Name
+		if name == "" {
+			name = "Custom EPG"
+		}
+		c.epgEnricher.AddSource(name, payload.URL)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"sources": c.epgEnricher.GetSources(),
+	})
+}
+
+func (c *Config) adminDeleteEPGSource(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "EPG enricher not initialized"})
+		return
+	}
+	id := ctx.Param("id")
+	deleted := c.epgEnricher.DeleteSource(id)
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"deleted": deleted,
+		"sources": c.epgEnricher.GetSources(),
+	})
+}
+
+func (c *Config) adminRefreshEPGSources(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "EPG enricher not initialized"})
+		return
+	}
+	go c.epgEnricher.RefreshAll(true)
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":  "refreshing",
+		"message": "EPG sources refresh started in background",
 	})
 }
 

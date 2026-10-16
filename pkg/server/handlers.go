@@ -184,13 +184,35 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 		return
 	}
 
+	var tap *directStreamTap
+	if c.streamHub != nil {
+		tap = c.streamHub.RegisterDirectTap(ctx.Param("id"), oriURL.Path, resp.Header.Get("Content-Type"))
+		defer c.streamHub.UnregisterDirectTap(tap)
+	}
+
 	mergeHttpHeader(ctx.Writer.Header(), resp.Header)
 	ctx.Status(resp.StatusCode)
 	bufPtr := streamBufferPool.Get().(*[]byte)
 	defer streamBufferPool.Put(bufPtr)
 	ctx.Stream(func(w io.Writer) bool {
-		io.CopyBuffer(w, resp.Body, *bufPtr) // nolint: errcheck
-		return false
+		buf := *bufPtr
+		for {
+			n, rerr := resp.Body.Read(buf)
+			if n > 0 {
+				if tap != nil && tap.HasSubscribers() {
+					tap.Broadcast(buf[:n])
+				}
+				if _, werr := w.Write(buf[:n]); werr != nil {
+					return false
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			if rerr != nil {
+				return false
+			}
+		}
 	})
 }
 

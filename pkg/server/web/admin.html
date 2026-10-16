@@ -1714,6 +1714,62 @@
             <span class="spinner"></span> Loading Live TV categories...
         </div>
         <div class="list-container grouped-mode" id="liveList" style="display: none;"></div>
+
+        <!-- EPG Sources & Guide Enrichment Card -->
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; margin-top:2rem; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.75rem;">
+                <div>
+                    <h3 style="margin:0; font-size:1.05rem; display:flex; align-items:center; gap:0.5rem; color:var(--text);">
+                        <span>📅 External XMLTV EPG & Guide Enrichment</span>
+                        <span id="epgRefreshBadge" class="url-pill online" style="font-size:0.72rem; display:none;">Updating...</span>
+                    </h3>
+                    <p style="margin:0.25rem 0 0 0; font-size:0.85rem; color:var(--text-muted); max-width:800px;">
+                        Fixes missing schedules and replaces placeholder titles (<em>"CINEMA"</em>, <em>"NO INFORMATION"</em>) in Xtream Codes API (<code>get_short_epg</code>) and <code>xmltv.php</code> with real program data.
+                    </p>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="refreshEPGSources()" id="btnRefreshEPG">
+                        🔄 Refresh EPG Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- 1-Click Presets -->
+            <div style="margin:1rem 0; padding:0.75rem; background:rgba(0,0,0,0.2); border-radius:var(--radius); border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:0.78rem; font-weight:600; color:#a5b4fc; text-transform:uppercase; margin-bottom:0.5rem;">
+                    ⚡ 1-Click Community XMLTV Presets (epgshare01) :
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:0.5rem;" id="epgPresetsList">
+                    <!-- Populated dynamically by loadEPGSources() -->
+                </div>
+            </div>
+
+            <!-- Configured Sources Table -->
+            <div class="table-responsive" style="margin-bottom:1rem;">
+                <table class="url-list-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">Active</th>
+                            <th>Source Name</th>
+                            <th>XMLTV URL (.xml / .xml.gz)</th>
+                            <th>Indexed Content</th>
+                            <th>Last Updated</th>
+                            <th style="text-align:right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="epgSourcesTableBody">
+                        <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1rem;">Loading EPG sources...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Add Custom Source Form -->
+            <form onsubmit="addCustomEPGSource(event)" style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
+                <input type="text" id="newEpgName" placeholder="Source Name (e.g. Canada Alternate)" style="flex:1; min-width:180px; padding:0.45rem 0.75rem; font-size:0.85rem;" required>
+                <input type="url" id="newEpgUrl" placeholder="https://example.com/epg.xml.gz" style="flex:2; min-width:260px; padding:0.45rem 0.75rem; font-size:0.85rem;" required>
+                <button type="submit" class="btn btn-primary" style="padding:0.45rem 1rem; font-size:0.85rem;">+ Add Source</button>
+            </form>
+        </div>
     </div>
 
     <!-- VOD TAB -->
@@ -2545,6 +2601,9 @@
         } else if (type === 'logs') {
             fetchLogs();
             startLogsAutoRefresh();
+        } else if (type === 'live') {
+            loadEPGSources();
+            stopLogsAutoRefresh();
         } else {
             stopLogsAutoRefresh();
         }
@@ -4340,15 +4399,20 @@ ${origin}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeUR
             `;
             let cardsHtml = `<div class="stream-cards-grid mobile-only">`;
             state.streams.forEach(s => {
+                const chanDisplay = s.channel_name 
+                    ? `<div style="font-weight:600; color:#f8fafc; font-size:0.9rem;">📺 ${escapeHtml(s.channel_name)}</div><div style="font-size:0.75rem; color:#94a3b8; font-family:monospace;">${escapeHtml(s.stream_url || s.stream_id || '')}</div>`
+                    : `<strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</strong>`;
+                const chanAttr = escapeHtml(s.channel_name || '');
+
                 html += `
                     <tr>
                         <td><strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong></td>
                         <td><code style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(s.ip || 'Unknown')}</code></td>
-                        <td><strong style="color:#a5b4fc; font-family:monospace; font-size:0.85rem;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</strong></td>
+                        <td>${chanDisplay}</td>
                         <td><span style="font-size:0.85rem; color:#f8fafc;">⏱️ ${escapeHtml(s.duration || '0s')}</span></td>
                         <td><span class="url-pill online"><span class="status-dot" style="background:var(--success); width:7px; height:7px;"></span> Streaming</span></td>
                         <td style="text-align:right;">
-                            <button type="button" class="btn btn-secondary" style="padding:0.25rem 0.65rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}')">
+                            <button type="button" class="btn btn-secondary" style="padding:0.25rem 0.65rem; font-size:0.75rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}', '${chanAttr}')">
                                 <span>▶</span> Inspect
                             </button>
                         </td>
@@ -4360,12 +4424,12 @@ ${origin}/xmltv.php?username=${encodeURIComponent(username)}&password=${encodeUR
                             <strong style="color:var(--text); font-weight:600;">👤 ${escapeHtml(s.username || 'Direct')}</strong>
                             <div style="display:flex; align-items:center; gap:0.4rem;">
                                 <span class="url-pill online"><span class="status-dot" style="background:var(--success); width:6px; height:6px;"></span> Streaming</span>
-                                <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.72rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}')">▶</button>
+                                <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.72rem;" onclick="StreamInspector.inspectDirect('${escapeHtml(s.stream_url || s.stream_id || '')}', '${escapeHtml(s.username || '')}', '${chanAttr}')">▶</button>
                             </div>
                         </div>
                         <div class="stream-card-meta">
                             <div class="stream-card-meta-row"><span>Client IP</span><code>${escapeHtml(s.ip || 'Unknown')}</code></div>
-                            <div class="stream-card-meta-row"><span>Channel / URI</span><code style="color:#a5b4fc; word-break:break-all;">${escapeHtml(s.stream_url || s.stream_id || 'Active Stream')}</code></div>
+                            <div class="stream-card-meta-row"><span>Channel / URI</span><div>${chanDisplay}</div></div>
                             <div class="stream-card-meta-row"><span>Duration</span><span>⏱️ ${escapeHtml(s.duration || '0s')}</span></div>
                         </div>
                     </div>
@@ -5533,50 +5597,63 @@ services:<br>
         }
 
         function inspectRelay(key) {
-            let streamUrl = key;
-            if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
-                const user = (state.users && state.users.length > 0) ? state.users[0].username : 'admin';
-                const pass = (state.users && state.users.length > 0) ? state.users[0].password : 'admin';
-                const cleanKey = key.startsWith('/') ? key : '/' + key;
-                if (cleanKey.includes('/live/') || cleanKey.includes('/movie/') || cleanKey.includes('/series/')) {
-                    streamUrl = window.location.origin + cleanKey;
-                } else {
-                    streamUrl = `${window.location.origin}/live/${encodeURIComponent(user)}/${encodeURIComponent(pass)}${cleanKey}`;
-                }
-            }
-            open(streamUrl, `Relay: ${key}`);
+            const cleanKey = key.startsWith('/') ? key.slice(1) : key;
+            const inspectApiUrl = `${window.location.origin}/admin/api/inspect?url=${encodeURIComponent(key)}`;
+            const displayUrl = `${window.location.origin}/${cleanKey}`;
+            open(displayUrl, `Relay: ${key}`, inspectApiUrl);
         }
 
-        function inspectDirect(uri, username) {
-            let streamUrl = uri;
-            if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
-                const user = username || ((state.users && state.users.length > 0) ? state.users[0].username : 'admin');
-                const pass = (state.users && state.users.length > 0) ? state.users[0].password : 'admin';
-                const cleanKey = uri.startsWith('/') ? uri : '/' + uri;
-                if (cleanKey.includes('/live/') || cleanKey.includes('/movie/') || cleanKey.includes('/series/')) {
-                    streamUrl = window.location.origin + cleanKey;
-                } else {
-                    streamUrl = `${window.location.origin}/live/${encodeURIComponent(user)}/${encodeURIComponent(pass)}${cleanKey}`;
-                }
+        function inspectDirect(uri, username, chanName) {
+            let streamType = 'live';
+            let streamId = uri;
+
+            const cleanUri = uri.startsWith('/') ? uri.slice(1) : uri;
+            const parts = cleanUri.split('/').filter(Boolean);
+
+            if (parts.length >= 2 && (parts[0] === 'live' || parts[0] === 'movie' || parts[0] === 'series')) {
+                streamType = parts[0];
+                streamId = parts[parts.length - 1];
+            } else if (parts.length === 1) {
+                streamId = parts[0];
             }
-            open(streamUrl, `Session: ${username || 'Direct'}`);
+
+            const rawID = streamId.replace(/\.(ts|m3u8|mp4)$/i, '');
+
+            // 1. Look up user's actual password from state
+            const matchedUser = (state.users || []).find(u => u.username === username);
+            const userPass = matchedUser ? matchedUser.password : '***';
+
+            // 2. Format proper client player URL for display
+            let displayUrl = uri;
+            if (!displayUrl.startsWith('http://') && !displayUrl.startsWith('https://')) {
+                displayUrl = `${window.location.origin}/${streamType}/${encodeURIComponent(username || 'admin')}/${encodeURIComponent(userPass)}/${encodeURIComponent(rawID)}.ts`;
+            }
+
+            // 3. Admin zero-slot tap endpoint for internal video playback
+            const inspectApiUrl = `${window.location.origin}/admin/api/inspect?stream_id=${encodeURIComponent(rawID)}&stream_type=${encodeURIComponent(streamType)}&url=${encodeURIComponent(uri)}`;
+
+            const title = chanName ? `📺 ${chanName} (${username})` : `Session: ${username || 'Direct'}`;
+            open(displayUrl, title, inspectApiUrl);
         }
 
-        function open(streamUrl, title) {
+        function open(streamUrl, title, inspectApiUrl) {
             if (!streamUrl) return;
             close(false);
             const modal = el('streamInspectorModal');
             if (modal) modal.style.display = 'flex';
             el('inspCustomUrl').value = streamUrl;
 
-            const video = el('inspVideo');
-            const isHLS = streamUrl.includes('.m3u8');
+            // Actual video playback source: use inspectApiUrl if provided, otherwise streamUrl
+            const playbackUrl = inspectApiUrl || streamUrl;
 
-            resetUI(title, isHLS ? 'HLS (M3U8 Manifest)' : 'HTTP MPEG-TS (188B Aligned)');
+            const video = el('inspVideo');
+            const isHLS = playbackUrl.includes('.m3u8') || streamUrl.includes('.m3u8');
+
+            resetUI(title, isHLS ? 'HLS (M3U8 Manifest)' : (inspectApiUrl ? 'HTTP MPEG-TS (Zero-Slot Tap)' : 'HTTP MPEG-TS (Direct)'));
 
             if (isHLS && window.Hls && Hls.isSupported()) {
                 hlsPlayer = new Hls({ enableWorker: true, lowLatencyMode: true });
-                hlsPlayer.loadSource(streamUrl);
+                hlsPlayer.loadSource(playbackUrl);
                 hlsPlayer.attachMedia(video);
 
                 hlsPlayer.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
@@ -5607,7 +5684,7 @@ services:<br>
                     tsPlayer = mpegts.createPlayer({
                         type: 'mse',
                         isLive: true,
-                        url: streamUrl
+                        url: playbackUrl
                     }, {
                         enableWorker: true,
                         enableStashBuffer: false,
@@ -5641,11 +5718,11 @@ services:<br>
                         setStatus(`ERR: ${errDetail}`, 'var(--danger)');
                     });
                 } catch (e) {
-                    video.src = streamUrl;
+                    video.src = playbackUrl;
                     video.play().catch(() => {});
                 }
             } else {
-                video.src = streamUrl;
+                video.src = playbackUrl;
                 video.play().catch(() => {});
                 setStatus('PLAYING (Native)', 'var(--success)');
             }
@@ -5682,6 +5759,175 @@ services:<br>
         return { open, close, promptUrl, inspectRelay, inspectDirect };
     })();
 
+    // EPG Sources & Guide Enrichment Management
+    async function loadEPGSources() {
+        try {
+            const res = await fetch('/admin/api/epg-sources');
+            if (!res.ok) return;
+            const data = await res.json();
+            state.epgSources = data.sources || [];
+            state.epgPresets = data.presets || [];
+            renderEPGPresets();
+            renderEPGSourcesTable();
+            const badge = el('epgRefreshBadge');
+            if (badge) {
+                badge.style.display = data.is_refreshing ? 'inline-block' : 'none';
+            }
+        } catch (e) {
+            console.error('Error loading EPG sources:', e);
+        }
+    }
+
+    function renderEPGPresets() {
+        const container = el('epgPresetsList');
+        if (!container) return;
+        const presets = state.epgPresets || [];
+        const configuredUrls = new Set((state.epgSources || []).map(s => s.url));
+
+        container.innerHTML = presets.map(p => {
+            const alreadyAdded = configuredUrls.has(p.url);
+            return `
+                <button type="button" class="btn btn-secondary btn-sm" 
+                    style="font-size:0.75rem; padding:0.3rem 0.65rem; display:inline-flex; align-items:center; gap:0.35rem; ${alreadyAdded ? 'opacity:0.6; border-color:var(--success);' : ''}"
+                    onclick="addEPGPreset('${escapeHtml(p.id)}')"
+                    ${alreadyAdded ? 'disabled title="Preset already added"' : ''}>
+                    <span>${escapeHtml(p.name)}</span>
+                    <span style="font-size:0.7rem; color:${alreadyAdded ? 'var(--success)' : '#a5b4fc'};">${alreadyAdded ? '✓ Added' : '+ Add'}</span>
+                </button>
+            `;
+        }).join('');
+    }
+
+    function renderEPGSourcesTable() {
+        const tbody = el('epgSourcesTableBody');
+        if (!tbody) return;
+        const sources = state.epgSources || [];
+
+        if (sources.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1rem;">No external EPG sources configured. Click a 1-click preset above or add a custom XMLTV URL.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = sources.map(s => {
+            const countInfo = (s.channel_count > 0 || s.program_count > 0)
+                ? `<span class="url-pill online">${s.channel_count} channels / ${s.program_count} progs</span>`
+                : (s.last_error ? `<span class="url-pill offline" title="${escapeHtml(s.last_error)}">⚠️ Error</span>` : `<span class="url-pill" style="color:var(--text-muted);">Indexing...</span>`);
+
+            let lastUp = '-';
+            if (s.last_updated && !s.last_updated.startsWith('0001')) {
+                const d = new Date(s.last_updated);
+                lastUp = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + d.toLocaleDateString();
+            }
+
+            return `
+                <tr>
+                    <td>
+                        <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleEPGSource('${escapeHtml(s.id)}', this.checked)">
+                    </td>
+                    <td><strong style="color:var(--text); font-size:0.85rem;">${escapeHtml(s.name)}</strong></td>
+                    <td><code style="font-size:0.78rem; color:#a5b4fc; word-break:break-all;">${escapeHtml(s.url)}</code></td>
+                    <td>${countInfo}</td>
+                    <td><span style="font-size:0.8rem; color:#94a3b8;">${escapeHtml(lastUp)}</span></td>
+                    <td style="text-align:right;">
+                        <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger); padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="deleteEPGSource('${escapeHtml(s.id)}')">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function addEPGPreset(presetId) {
+        const preset = (state.epgPresets || []).find(p => p.id === presetId);
+        if (!preset) return;
+        try {
+            const res = await fetch('/admin/api/epg-sources', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: preset.name, url: preset.url })
+            });
+            if (res.ok) {
+                await loadEPGSources();
+            }
+        } catch (e) {
+            console.error('Error adding EPG preset:', e);
+        }
+    }
+
+    async function addCustomEPGSource(e) {
+        e.preventDefault();
+        const nameInput = el('newEpgName');
+        const urlInput = el('newEpgUrl');
+        const name = nameInput.value.trim();
+        const url = urlInput.value.trim();
+        if (!url) return;
+
+        try {
+            const res = await fetch('/admin/api/epg-sources', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name || 'Custom EPG', url: url })
+            });
+            if (res.ok) {
+                nameInput.value = '';
+                urlInput.value = '';
+                await loadEPGSources();
+            }
+        } catch (err) {
+            console.error('Error adding custom EPG source:', err);
+        }
+    }
+
+    async function toggleEPGSource(id, enabled) {
+        const sources = (state.epgSources || []).map(s => {
+            if (s.id === id) return { ...s, enabled: enabled };
+            return s;
+        });
+        try {
+            await fetch('/admin/api/epg-sources', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sources: sources })
+            });
+            await loadEPGSources();
+        } catch (e) {
+            console.error('Error toggling EPG source:', e);
+        }
+    }
+
+    async function deleteEPGSource(id) {
+        if (!confirm('Are you sure you want to remove this EPG source?')) return;
+        try {
+            const res = await fetch(`/admin/api/epg-sources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (res.ok) {
+                await loadEPGSources();
+            }
+        } catch (e) {
+            console.error('Error deleting EPG source:', e);
+        }
+    }
+
+    async function refreshEPGSources() {
+        const btn = el('btnRefreshEPG');
+        const badge = el('epgRefreshBadge');
+        if (btn) btn.disabled = true;
+        if (badge) badge.style.display = 'inline-block';
+        try {
+            await fetch('/admin/api/epg-sources/refresh', { method: 'POST' });
+            let tries = 0;
+            const poller = setInterval(async () => {
+                tries++;
+                await loadEPGSources();
+                if (!el('epgRefreshBadge') || el('epgRefreshBadge').style.display === 'none' || tries > 20) {
+                    clearInterval(poller);
+                    if (btn) btn.disabled = false;
+                }
+            }, 3000);
+        } catch (e) {
+            console.error('Error refreshing EPG sources:', e);
+            if (btn) btn.disabled = false;
+        }
+    }
+
     // Initialize on page load
     (async function init() {
         restoreCachedGluetunCreds();
@@ -5689,6 +5935,7 @@ services:<br>
         await loadCategories();
         await loadUsers();
         await loadStreams();
+        await loadEPGSources();
         await loadVpnProxy();
         toggleStreamAutoRefresh();
         checkVersionStatus();

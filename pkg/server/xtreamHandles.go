@@ -807,40 +807,51 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 				return nil, code, errAction
 			}
 
-			if len(enabled) == 1 && provIdx == 0 {
-				resp = subResp
-			} else {
-				b, _ := json.Marshal(subResp)
-				var list []map[string]interface{}
-				if errU := json.Unmarshal(b, &list); errU == nil {
-					batchTargets := make(map[string]StreamRoutingTarget, len(list))
-					for _, item := range list {
-						rawID := fmt.Sprint(item[idKey])
-						var virtualID string
-						origNum, numErr := strconv.Atoi(rawID)
-						if numErr == nil && provIdx > 0 {
-							vNum := EncodeVirtualStreamID(provIdx, origNum)
-							virtualID = strconv.Itoa(vNum)
-							item[idKey] = vNum
-						} else if provIdx > 0 {
-							virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
-							item[idKey] = virtualID
-						} else {
-							virtualID = rawID
-						}
-						item["category_id"] = catParam
-
-						batchTargets[virtualID] = StreamRoutingTarget{
-							ProviderIndex: provIdx,
-							OriginalID:    rawID,
-							StreamType:    streamType,
-						}
+			b, _ := json.Marshal(subResp)
+			var list []map[string]interface{}
+			if errU := json.Unmarshal(b, &list); errU == nil {
+				batchTargets := make(map[string]StreamRoutingTarget, len(list))
+				for _, item := range list {
+					rawID := fmt.Sprint(item[idKey])
+					var virtualID string
+					origNum, numErr := strconv.Atoi(rawID)
+					if numErr == nil && provIdx > 0 {
+						vNum := EncodeVirtualStreamID(provIdx, origNum)
+						virtualID = strconv.Itoa(vNum)
+						item[idKey] = vNum
+					} else if provIdx > 0 {
+						virtualID = fmt.Sprintf("p%d_%s", provIdx, rawID)
+						item[idKey] = virtualID
+					} else {
+						virtualID = rawID
 					}
-					c.RegisterStreamTargetsBatch(batchTargets)
-					resp = list
-				} else {
-					resp = subResp
+					item["category_id"] = catParam
+
+					chanName := ""
+					if n, ok := item["name"]; ok && n != nil {
+						chanName = fmt.Sprint(n)
+					}
+					epgID := ""
+					if ep, ok := item["epg_channel_id"]; ok && ep != nil {
+						epgID = fmt.Sprint(ep)
+					}
+
+					batchTargets[virtualID] = StreamRoutingTarget{
+						ProviderIndex: provIdx,
+						OriginalID:    rawID,
+						StreamType:    streamType,
+						Name:          chanName,
+						EPGChannelID:  epgID,
+					}
 				}
+				c.RegisterStreamTargetsBatch(batchTargets)
+				if len(enabled) == 1 && provIdx == 0 {
+					resp = subResp
+				} else {
+					resp = list
+				}
+			} else {
+				resp = subResp
 			}
 		} else {
 			if len(enabled) == 1 {
@@ -853,6 +864,31 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 					return nil, code, errAction
 				}
 				resp = subResp
+				if b, errM := json.Marshal(subResp); errM == nil {
+					var list []map[string]interface{}
+					if errU := json.Unmarshal(b, &list); errU == nil {
+						singleBatch := make(map[string]StreamRoutingTarget, len(list))
+						for _, item := range list {
+							rawID := fmt.Sprint(item[idKey])
+							chanName := ""
+							if n, ok := item["name"]; ok && n != nil {
+								chanName = fmt.Sprint(n)
+							}
+							epgID := ""
+							if ep, ok := item["epg_channel_id"]; ok && ep != nil {
+								epgID = fmt.Sprint(ep)
+							}
+							singleBatch[rawID] = StreamRoutingTarget{
+								ProviderIndex: 0,
+								OriginalID:    rawID,
+								StreamType:    streamType,
+								Name:          chanName,
+								EPGChannelID:  epgID,
+							}
+						}
+						c.RegisterStreamTargetsBatch(singleBatch)
+					}
+				}
 			} else {
 				var aggregated []map[string]interface{}
 				batchTargets := make(map[string]StreamRoutingTarget)
@@ -897,10 +933,21 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 							}
 						}
 
+						chanName := ""
+						if n, ok := item["name"]; ok && n != nil {
+							chanName = fmt.Sprint(n)
+						}
+						epgID := ""
+						if ep, ok := item["epg_channel_id"]; ok && ep != nil {
+							epgID = fmt.Sprint(ep)
+						}
+
 						batchTargets[virtualID] = StreamRoutingTarget{
 							ProviderIndex: provIdx,
 							OriginalID:    rawID,
 							StreamType:    streamType,
+							Name:          chanName,
+							EPGChannelID:  epgID,
 						}
 						aggregated = append(aggregated, item)
 					}
@@ -999,6 +1046,27 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 			return nil, httpcode, err
 		}
 
+		if c.epgEnricher != nil && httpcode == http.StatusOK && len(resp) > 0 {
+			chanName, epgID, _ := c.LookupStreamMetadata(streamID)
+			var epgData map[string]interface{}
+			if errJson := json.Unmarshal(resp, &epgData); errJson == nil {
+				rawListings, _ := epgData["epg_listings"].([]interface{})
+				enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawListings)
+				epgData["epg_listings"] = enriched
+				if modifiedBytes, errM := json.Marshal(epgData); errM == nil {
+					resp = modifiedBytes
+				}
+			} else {
+				var rawArr []interface{}
+				if errArr := json.Unmarshal(resp, &rawArr); errArr == nil {
+					enriched := c.epgEnricher.EnrichXtreamEPGListings(chanName, epgID, rawArr)
+					if modifiedBytes, errM := json.Marshal(enriched); errM == nil {
+						resp = modifiedBytes
+					}
+				}
+			}
+		}
+
 	default:
 		client, errClient := getClientForProvider(enabled[0])
 		if errClient != nil {
@@ -1038,10 +1106,17 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 					}()
 
 					log.Printf("[iptv-proxy] Background XMLTV refresh starting...")
-					client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
+					enabled := c.GetEnabledProvidersOrFallback()
+					if len(enabled) == 0 {
+						return
+					}
+					client, err := getClientForProvider(enabled[0])
 					if err == nil {
 						resp, err := client.GetXMLTV()
 						if err == nil {
+							if c.epgEnricher != nil {
+								resp = c.epgEnricher.EnrichXMLTV(resp, c.GetLiveStreamMetadataList())
+							}
 							c.xmltvCache.Set(cacheKey, resp, "application/xml")
 							log.Printf("[iptv-proxy] Background XMLTV refresh completed successfully.")
 						} else {
@@ -1058,7 +1133,12 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 		return
 	}
 
-	client, err := xtreamapi.New(c.XtreamUser.String(), c.XtreamPassword.String(), c.XtreamBaseURL, c.GetUpstreamUserAgent(), c.Referer)
+	enabled := c.GetEnabledProvidersOrFallback()
+	if len(enabled) == 0 {
+		ctx.AbortWithStatus(http.StatusBadGateway)
+		return
+	}
+	client, err := getClientForProvider(enabled[0])
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
@@ -1068,6 +1148,10 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 	if err != nil {
 		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
 		return
+	}
+
+	if c.epgEnricher != nil {
+		resp = c.epgEnricher.EnrichXMLTV(resp, c.GetLiveStreamMetadataList())
 	}
 
 	c.xmltvCache.Set(cacheKey, resp, "application/xml")
@@ -1103,7 +1187,11 @@ func (c *Config) authenticateStreamUser(ctx *gin.Context, streamID string, strea
 	var slot *config.UserSlot
 	var allowed bool = true
 	if c.userManager != nil {
-		slot, allowed = c.userManager.AcquireSlot(authenticatedUser.Username, ctx.ClientIP(), streamID, streamType, cancel)
+		streamURI := ctx.Request.URL.Path
+		if streamURI == "" {
+			streamURI = fmt.Sprintf("/%s/%s", streamType, streamID)
+		}
+		slot, allowed = c.userManager.AcquireSlot(authenticatedUser.Username, ctx.ClientIP(), streamID, streamURI, cancel)
 	}
 
 	if !allowed {

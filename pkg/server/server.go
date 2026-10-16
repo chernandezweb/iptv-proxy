@@ -94,6 +94,8 @@ type StreamRoutingTarget struct {
 	ProviderIndex int
 	OriginalID    string
 	StreamType    string // "live", "movie", "series"
+	Name          string
+	EPGChannelID  string
 }
 
 // Config represent the server configuration
@@ -114,6 +116,7 @@ type Config struct {
 	xmltvCache       *responseCache
 	chunkCache       *chunkCache
 	streamHub        *StreamHub
+	epgEnricher      *EPGEnricher
 	userManager      *config.UserManager
 	httpClient       *http.Client
 	baseStreamURL    *url.URL
@@ -195,6 +198,7 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 	})
 	cfg.userManager = config.NewUserManager(usersPath, cfgData.User.String(), cfgData.Password.String())
 	cfg.ProxyConfig.UserManager = cfg.userManager
+	cfg.epgEnricher = NewEPGEnricher(filepath.Join(dataDir, "epg_sources.json"))
 
 	// Apply SOCKS / VPN proxy if configured in provider.json
 	socks := cfg.ProxyConfig.Provider.GetSocksProxy()
@@ -620,6 +624,49 @@ func (c *Config) RegisterStreamTargetsBatch(targets map[string]StreamRoutingTarg
 		c.streamRoutingMap[k] = v
 	}
 	c.streamRoutingLock.Unlock()
+}
+
+// LookupStreamMetadata looks up stored channel metadata (Name, EPGChannelID, etc.) for a stream ID.
+func (c *Config) LookupStreamMetadata(rawID string) (StreamRoutingTarget, bool) {
+	if c == nil {
+		return StreamRoutingTarget{}, false
+	}
+	rawID = strings.TrimSpace(rawID)
+	base := path.Base(rawID)
+	ext := path.Ext(base)
+	clean := strings.TrimSuffix(base, ext)
+
+	c.streamRoutingLock.RLock()
+	defer c.streamRoutingLock.RUnlock()
+	if c.streamRoutingMap == nil {
+		return StreamRoutingTarget{}, false
+	}
+	if t, ok := c.streamRoutingMap[clean]; ok {
+		return t, true
+	}
+	if t, ok := c.streamRoutingMap[base]; ok {
+		return t, true
+	}
+	return StreamRoutingTarget{}, false
+}
+
+// GetLiveStreamMetadataList returns all cached live stream metadata entries.
+func (c *Config) GetLiveStreamMetadataList() []StreamRoutingTarget {
+	if c == nil {
+		return nil
+	}
+	c.streamRoutingLock.RLock()
+	defer c.streamRoutingLock.RUnlock()
+	if len(c.streamRoutingMap) == 0 {
+		return nil
+	}
+	out := make([]StreamRoutingTarget, 0, len(c.streamRoutingMap))
+	for _, v := range c.streamRoutingMap {
+		if v.StreamType == "live" && v.Name != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // ResolveTargetStream resolves which upstream provider and original stream ID a client request belongs to.

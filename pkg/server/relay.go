@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -101,18 +103,316 @@ type streamRelay struct {
 	active      bool
 }
 
+// directStreamTap allows the Admin Stream Inspector to tap into an active Direct 1:1 stream
+// in memory with zero additional upstream provider connections and zero user slot consumption.
+type directStreamTap struct {
+	clientID     string
+	upstreamPath string
+	contentType  string
+	subCount     int32
+	mu           sync.Mutex
+	subscribers  map[chan []byte]struct{}
+	closed       bool
+}
+
+func (t *directStreamTap) HasSubscribers() bool {
+	return t != nil && atomic.LoadInt32(&t.subCount) > 0
+}
+
+func (t *directStreamTap) Broadcast(data []byte) {
+	if t == nil || len(data) == 0 || atomic.LoadInt32(&t.subCount) <= 0 {
+		return
+	}
+	cp := make([]byte, len(data))
+	copy(cp, data)
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	for ch := range t.subscribers {
+		select {
+		case ch <- cp:
+		default:
+			// Drop if inspector buffer is temporarily full so primary stream never stalls
+		}
+	}
+}
+
 // StreamHub manages multiplexed live stream relays so multiple devices watching
 // the same channel share a single upstream connection to the IPTV provider,
 // with automatic packet alignment, memory-pooled buffers, and drop/stall reconnection.
 type StreamHub struct {
-	mu     sync.Mutex
-	relays map[string]*streamRelay
+	mu         sync.Mutex
+	relays     map[string]*streamRelay
+	directTaps []*directStreamTap
 }
 
 func newStreamHub() *StreamHub {
 	return &StreamHub{
-		relays: make(map[string]*streamRelay),
+		relays:     make(map[string]*streamRelay),
+		directTaps: make([]*directStreamTap, 0),
 	}
+}
+
+func normalizeStreamMatchKey(k string) string {
+	k = strings.TrimSpace(k)
+	if k == "" {
+		return ""
+	}
+	base := path.Base(k)
+	ext := path.Ext(base)
+	return strings.ToLower(strings.TrimSuffix(base, ext))
+}
+
+func (h *StreamHub) RegisterDirectTap(clientID, upstreamPath, contentType string) *directStreamTap {
+	if h == nil {
+		return nil
+	}
+	tap := &directStreamTap{
+		clientID:     clientID,
+		upstreamPath: upstreamPath,
+		contentType:  contentType,
+		subscribers:  make(map[chan []byte]struct{}),
+	}
+	h.mu.Lock()
+	h.directTaps = append(h.directTaps, tap)
+	h.mu.Unlock()
+	return tap
+}
+
+func (h *StreamHub) UnregisterDirectTap(tap *directStreamTap) {
+	if h == nil || tap == nil {
+		return
+	}
+	h.mu.Lock()
+	for i, t := range h.directTaps {
+		if t == tap {
+			h.directTaps = append(h.directTaps[:i], h.directTaps[i+1:]...)
+			break
+		}
+	}
+	h.mu.Unlock()
+
+	tap.mu.Lock()
+	tap.closed = true
+	for ch := range tap.subscribers {
+		close(ch)
+		delete(tap.subscribers, ch)
+	}
+	atomic.StoreInt32(&tap.subCount, 0)
+	tap.mu.Unlock()
+}
+
+// TryAttachExistingRelay attaches an Admin Inspector request to an already-running multiplexed relay if one matches.
+func (h *StreamHub) TryAttachExistingRelay(ctx *gin.Context, candidateKeys ...string) bool {
+	if h == nil {
+		return false
+	}
+	var matched *streamRelay
+	h.mu.Lock()
+	for _, cand := range candidateKeys {
+		cand = strings.TrimSpace(cand)
+		if cand == "" {
+			continue
+		}
+		if r, ok := h.relays[cand]; ok && r.active {
+			matched = r
+			break
+		}
+		normCand := normalizeStreamMatchKey(cand)
+		if normCand == "" {
+			continue
+		}
+		for k, r := range h.relays {
+			if r.active && normalizeStreamMatchKey(k) == normCand {
+				matched = r
+				break
+			}
+		}
+		if matched != nil {
+			break
+		}
+	}
+	h.mu.Unlock()
+
+	if matched == nil {
+		return false
+	}
+
+	select {
+	case <-matched.ready:
+	case <-ctx.Request.Context().Done():
+		return true
+	case <-time.After(5 * time.Second):
+		return false
+	}
+	if matched.upstreamErr != nil {
+		return false
+	}
+
+	sub := &relaySubscriber{
+		ip:   "admin-inspector(" + ctx.ClientIP() + ")",
+		ch:   make(chan *RefChunk, subscriberBuf),
+		done: make(chan struct{}),
+	}
+
+	matched.mu.Lock()
+	if !matched.active {
+		matched.mu.Unlock()
+		return false
+	}
+	matched.subscribers[sub] = true
+	contentType := matched.contentType
+	header := matched.header.Clone()
+	matched.mu.Unlock()
+
+	defer func() {
+		matched.mu.Lock()
+		delete(matched.subscribers, sub)
+		matched.mu.Unlock()
+		sub.close()
+		for {
+			select {
+			case chunk := <-sub.ch:
+				if chunk != nil {
+					chunk.Release()
+				}
+			default:
+				return
+			}
+		}
+	}()
+
+	if contentType != "" {
+		ctx.Header("Content-Type", contentType)
+	} else {
+		ctx.Header("Content-Type", "video/mp2t")
+	}
+	if header != nil {
+		mergeHttpHeader(ctx.Writer.Header(), header)
+	}
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	ctx.Status(http.StatusOK)
+
+	ctx.Stream(func(w io.Writer) bool {
+		select {
+		case chunk, ok := <-sub.ch:
+			if !ok || chunk == nil {
+				return false
+			}
+			_, err := w.Write(chunk.data[:chunk.n])
+			chunk.Release()
+			if flusher, okF := w.(http.Flusher); okF {
+				flusher.Flush()
+			}
+			return err == nil
+		case <-ctx.Request.Context().Done():
+			return false
+		case <-sub.done:
+			return false
+		}
+	})
+	return true
+}
+
+// TryAttachDirectTap attaches an Admin Inspector request to an active Direct 1:1 stream in memory
+// so inspecting a user's stream uses 0 additional upstream connections and never triggers provider MaxConn bans.
+func (h *StreamHub) TryAttachDirectTap(ctx *gin.Context, candidateKeys ...string) bool {
+	if h == nil {
+		return false
+	}
+	var matched *directStreamTap
+	h.mu.Lock()
+	for _, cand := range candidateKeys {
+		normCand := normalizeStreamMatchKey(cand)
+		if normCand == "" {
+			continue
+		}
+		for _, t := range h.directTaps {
+			if normalizeStreamMatchKey(t.clientID) == normCand || normalizeStreamMatchKey(t.upstreamPath) == normCand {
+				matched = t
+				break
+			}
+		}
+		if matched != nil {
+			break
+		}
+	}
+	h.mu.Unlock()
+
+	if matched == nil {
+		return false
+	}
+
+	ch := make(chan []byte, 96)
+	matched.mu.Lock()
+	if matched.closed {
+		matched.mu.Unlock()
+		return false
+	}
+	matched.subscribers[ch] = struct{}{}
+	atomic.AddInt32(&matched.subCount, 1)
+	cType := matched.contentType
+	matched.mu.Unlock()
+
+	defer func() {
+		matched.mu.Lock()
+		if _, exists := matched.subscribers[ch]; exists {
+			delete(matched.subscribers, ch)
+			atomic.AddInt32(&matched.subCount, -1)
+		}
+		matched.mu.Unlock()
+	}()
+
+	if cType != "" {
+		ctx.Header("Content-Type", cType)
+	} else {
+		ctx.Header("Content-Type", "video/mp2t")
+	}
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	ctx.Status(http.StatusOK)
+
+	log.Printf("[iptv-proxy] Admin Inspector tapped into active Direct 1:1 stream %s (0 extra upstream connections used)", matched.clientID)
+
+	synced := false
+	ctx.Stream(func(w io.Writer) bool {
+		select {
+		case data, ok := <-ch:
+			if !ok || len(data) == 0 {
+				return false
+			}
+			if !synced {
+				syncIdx := -1
+				for i := 0; i+tsPacket < len(data); i++ {
+					if data[i] == tsSyncByte && data[i+tsPacket] == tsSyncByte {
+						syncIdx = i
+						break
+					}
+				}
+				if syncIdx >= 0 {
+					data = data[syncIdx:]
+					synced = true
+				} else if len(data) > tsPacket*2 {
+					// Not a raw TS stream (e.g. MP4)
+					synced = true
+				} else {
+					return true
+				}
+			}
+			_, err := w.Write(data)
+			if flusher, okF := w.(http.Flusher); okF {
+				flusher.Flush()
+			}
+			return err == nil
+		case <-ctx.Request.Context().Done():
+			return false
+		}
+	})
+	return true
 }
 
 // GetActiveStreamsInfo returns a summary of all channels currently being watched.

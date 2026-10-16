@@ -1048,7 +1048,8 @@ func (c *Config) adminInspectStream(ctx *gin.Context) {
 			)
 			cmd.Stdout = ctx.Writer
 			cmd.Stderr = os.Stderr
-			if errRun := cmd.Run(); errRun == nil {
+			errRun := cmd.Run()
+			if errRun == nil {
 				return
 			}
 			log.Printf("[iptv-proxy] ffmpeg remux ended or exited: %v", errRun)

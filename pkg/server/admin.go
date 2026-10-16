@@ -135,6 +135,9 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	// Static files from embedded FS
 	adminHandler := func(ctx *gin.Context) {
 		html, _ := webFS.ReadFile("web/admin.html")
+		ctx.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		ctx.Header("Pragma", "no-cache")
+		ctx.Header("Expires", "0")
 		ctx.Data(http.StatusOK, "text/html; charset=utf-8", html)
 	}
 	admin.GET("", adminHandler)

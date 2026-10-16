@@ -188,8 +188,14 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 
 				for _, stream := range live {
 					track := m3u.Track{Name: stream.Name, Length: -1, URI: "", Tags: nil}
-					if stream.EPGChannelID != "" {
-						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: stream.EPGChannelID})
+					epgID := stream.EPGChannelID
+					if c.epgEnricher != nil {
+						if matched := c.epgEnricher.ResolveChannelEPGID(fmt.Sprint(stream.ID), stream.Name, epgID); matched != "" {
+							epgID = matched
+						}
+					}
+					if epgID != "" {
+						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: epgID})
 					}
 					if stream.Name != "" {
 						track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: stream.Name})
@@ -214,6 +220,8 @@ func (c *Config) xtreamGenerateM3u(userAgent string, extension string) (*m3u.Pla
 						ProviderIndex: provIdx,
 						OriginalID:    origID,
 						StreamType:    "live",
+						Name:          stream.Name,
+						EPGChannelID:  epgID,
 					})
 
 					track.URI = fmt.Sprintf("%s/%s%s/%s/%s%s", prov.XtreamBaseURL, livePrefix, prov.XtreamUser, prov.XtreamPassword, virtualID, ext)
@@ -835,6 +843,12 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 					if ep, ok := item["epg_channel_id"]; ok && ep != nil {
 						epgID = fmt.Sprint(ep)
 					}
+					if streamType == "live" && c.epgEnricher != nil {
+						if matched := c.epgEnricher.ResolveChannelEPGID(rawID, chanName, epgID); matched != "" {
+							epgID = matched
+							item["epg_channel_id"] = matched
+						}
+					}
 
 					batchTargets[virtualID] = StreamRoutingTarget{
 						ProviderIndex: provIdx,
@@ -845,11 +859,7 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 					}
 				}
 				c.RegisterStreamTargetsBatch(batchTargets)
-				if len(enabled) == 1 && provIdx == 0 {
-					resp = subResp
-				} else {
-					resp = list
-				}
+				resp = list
 			} else {
 				resp = subResp
 			}
@@ -878,6 +888,12 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 							if ep, ok := item["epg_channel_id"]; ok && ep != nil {
 								epgID = fmt.Sprint(ep)
 							}
+							if streamType == "live" && c.epgEnricher != nil {
+								if matched := c.epgEnricher.ResolveChannelEPGID(rawID, chanName, epgID); matched != "" {
+									epgID = matched
+									item["epg_channel_id"] = matched
+								}
+							}
 							singleBatch[rawID] = StreamRoutingTarget{
 								ProviderIndex: 0,
 								OriginalID:    rawID,
@@ -887,6 +903,9 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 							}
 						}
 						c.RegisterStreamTargetsBatch(singleBatch)
+						if streamType == "live" {
+							resp = list
+						}
 					}
 				}
 			} else {
@@ -940,6 +959,12 @@ func (c *Config) executePlayerAPI(action string, q url.Values) (interface{}, int
 						epgID := ""
 						if ep, ok := item["epg_channel_id"]; ok && ep != nil {
 							epgID = fmt.Sprint(ep)
+						}
+						if streamType == "live" && c.epgEnricher != nil {
+							if matched := c.epgEnricher.ResolveChannelEPGID(rawID, chanName, epgID); matched != "" {
+								epgID = matched
+								item["epg_channel_id"] = matched
+							}
 						}
 
 						batchTargets[virtualID] = StreamRoutingTarget{
@@ -1118,15 +1143,15 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 					client, err := getClientForProvider(enabled[0])
 					if err == nil {
 						resp, err := client.GetXMLTV()
-						if err == nil {
-							if c.epgEnricher != nil {
-								resp = c.epgEnricher.EnrichXMLTV(resp, c.GetLiveStreamMetadataList())
-							}
-							c.xmltvCache.Set(cacheKey, resp, "application/xml")
-							log.Printf("[iptv-proxy] Background XMLTV refresh completed successfully.")
-						} else {
-							log.Printf("[iptv-proxy] Background XMLTV refresh failed: %v", err)
+						if err != nil {
+							resp = nil
 						}
+						c.EnsureLiveStreamMetadataLoaded()
+						if c.epgEnricher != nil {
+							resp = c.epgEnricher.EnrichXMLTV(resp, c.GetLiveStreamMetadataList())
+						}
+						c.xmltvCache.Set(cacheKey, resp, "application/xml")
+						log.Printf("[iptv-proxy] Background XMLTV refresh completed successfully.")
 					} else {
 						log.Printf("[iptv-proxy] Background XMLTV refresh failed to init client: %v", err)
 					}
@@ -1151,10 +1176,11 @@ func (c *Config) xtreamXMLTV(ctx *gin.Context) {
 
 	resp, err := client.GetXMLTV()
 	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err) // nolint: errcheck
-		return
+		log.Printf("[iptv-proxy] Upstream XMLTV fetch failed (%v), building guide purely from enriched local index...", err)
+		resp = nil
 	}
 
+	c.EnsureLiveStreamMetadataLoaded()
 	if c.epgEnricher != nil {
 		resp = c.epgEnricher.EnrichXMLTV(resp, c.GetLiveStreamMetadataList())
 	}

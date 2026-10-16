@@ -22,10 +22,17 @@ import (
 
 // EPGProgram represents a single scheduled TV show/movie.
 type EPGProgram struct {
-	Title       string
-	Description string
-	Start       time.Time
-	End         time.Time
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Start       time.Time `json:"start"`
+	End         time.Time `json:"end"`
+}
+
+// EPGChannel holds channel details parsed from XMLTV.
+type EPGChannel struct {
+	ID           string   `json:"id"`
+	DisplayNames []string `json:"display_names"`
+	Icon         string   `json:"icon,omitempty"`
 }
 
 // EPGSourceItem represents a configured external XMLTV EPG source.
@@ -74,35 +81,52 @@ var BuiltInEPGPresets = []EPGSourceItem{
 	},
 }
 
-// EPGEnricher downloads, parses, and merges external XMLTV EPG sources
-// and intelligently replaces provider placeholder titles ("CINEMA", "NO INFORMATION").
+// EPGEnricher downloads, parses, indexes, and merges external XMLTV EPG sources.
+// It auto-matches provider channels to EPG IDs and injects complete schedule data into xmltv.php.
 type EPGEnricher struct {
-	mu           sync.RWMutex
-	filePath     string
-	sources      []EPGSourceItem
-	// normalizedChannelKey -> sorted slice of EPGProgram
-	programsMap  map[string][]EPGProgram
-	// normalizedChannelKey -> canonical display name
-	channelsMap  map[string]string
+	mu             sync.RWMutex
+	filePath       string
+	mappingsPath   string
+	sources        []EPGSourceItem
+	customMappings map[string]string // streamID / channelName -> target epgChannelID
+
+	// Indexed EPG data
+	channels     map[string]EPGChannel   // raw xmltv channelID -> EPGChannel
+	channelIndex map[string]string       // normalizedKey -> canonical channelID
+	programsMap  map[string][]EPGProgram // canonical channelID -> sorted slice of EPGProgram
+
 	isRefreshing bool
+	onUpdate     func()
 }
 
-func NewEPGEnricher(configPath string) *EPGEnricher {
+func NewEPGEnricher(configPath, mappingsPath string) *EPGEnricher {
 	e := &EPGEnricher{
-		filePath:    configPath,
-		sources:     make([]EPGSourceItem, 0),
-		programsMap: make(map[string][]EPGProgram),
-		channelsMap: make(map[string]string),
+		filePath:       configPath,
+		mappingsPath:   mappingsPath,
+		sources:        make([]EPGSourceItem, 0),
+		customMappings: make(map[string]string),
+		channels:       make(map[string]EPGChannel),
+		channelIndex:   make(map[string]string),
+		programsMap:    make(map[string][]EPGProgram),
 	}
 	e.loadConfig()
-	// Background refresh on startup if any sources enabled
+	e.loadCustomMappings()
+
+	// Initial background refresh on startup
 	go func() {
 		time.Sleep(3 * time.Second)
 		e.RefreshAll(false)
 	}()
-	// Periodic daily refresh
+
+	// Periodic refresh every 12 hours
 	go e.runPeriodicRefresher()
 	return e
+}
+
+func (e *EPGEnricher) SetOnUpdate(fn func()) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onUpdate = fn
 }
 
 func (e *EPGEnricher) runPeriodicRefresher() {
@@ -119,7 +143,6 @@ func (e *EPGEnricher) loadConfig() {
 	data, err := ioutil.ReadFile(e.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Initialize with Canada/Quebec preset enabled by default for CA users
 			e.sources = []EPGSourceItem{BuiltInEPGPresets[0]}
 			e.saveConfigUnlocked()
 		}
@@ -143,6 +166,56 @@ func (e *EPGEnricher) saveConfigUnlocked() {
 	data, err := json.MarshalIndent(e.sources, "", "  ")
 	if err == nil {
 		_ = ioutil.WriteFile(e.filePath, data, 0644)
+	}
+}
+
+func (e *EPGEnricher) loadCustomMappings() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.mappingsPath == "" {
+		return
+	}
+	data, err := ioutil.ReadFile(e.mappingsPath)
+	if err != nil {
+		return
+	}
+	var m map[string]string
+	if err := json.Unmarshal(data, &m); err == nil {
+		e.customMappings = m
+	}
+}
+
+func (e *EPGEnricher) saveCustomMappingsUnlocked() {
+	if e.mappingsPath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(e.mappingsPath), 0755)
+	data, err := json.MarshalIndent(e.customMappings, "", "  ")
+	if err == nil {
+		_ = ioutil.WriteFile(e.mappingsPath, data, 0644)
+	}
+}
+
+func (e *EPGEnricher) GetCustomMappings() map[string]string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	res := make(map[string]string, len(e.customMappings))
+	for k, v := range e.customMappings {
+		res[k] = v
+	}
+	return res
+}
+
+func (e *EPGEnricher) SaveCustomMappings(mappings map[string]string) {
+	e.mu.Lock()
+	e.customMappings = mappings
+	e.saveCustomMappingsUnlocked()
+	updateFn := e.onUpdate
+	e.mu.Unlock()
+
+	if updateFn != nil {
+		updateFn()
 	}
 }
 
@@ -230,6 +303,28 @@ func (e *EPGEnricher) IsRefreshing() bool {
 	return e.isRefreshing
 }
 
+// GetEPGChannels returns all currently indexed external EPG channels (for dropdown mapping UI).
+func (e *EPGEnricher) GetEPGChannels() []EPGChannel {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make([]EPGChannel, 0, len(e.channels))
+	for _, ch := range e.channels {
+		out = append(out, ch)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		nameI := out[i].ID
+		if len(out[i].DisplayNames) > 0 {
+			nameI = out[i].DisplayNames[0]
+		}
+		nameJ := out[j].ID
+		if len(out[j].DisplayNames) > 0 {
+			nameJ = out[j].DisplayNames[0]
+		}
+		return strings.ToLower(nameI) < strings.ToLower(nameJ)
+	})
+	return out
+}
+
 // RefreshAll downloads and parses all enabled external XMLTV sources.
 func (e *EPGEnricher) RefreshAll(force bool) {
 	e.mu.Lock()
@@ -245,12 +340,18 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 	defer func() {
 		e.mu.Lock()
 		e.isRefreshing = false
+		updateFn := e.onUpdate
 		e.mu.Unlock()
+
+		if updateFn != nil {
+			updateFn()
+		}
 	}()
 
 	client := &http.Client{Timeout: 90 * time.Second}
 	newProgMap := make(map[string][]EPGProgram)
-	newChanMap := make(map[string]string)
+	newChannels := make(map[string]EPGChannel)
+	newIndex := make(map[string]string)
 
 	now := time.Now()
 	// Retention window: now - 6 hours to now + 36 hours keeps memory footprint minimal
@@ -294,7 +395,7 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 			reader = io.MultiReader(bytes.NewReader(bufHeader[:nRead]), resp.Body)
 		}
 
-		cCount, pCount, errParse := parseXMLTVStream(reader, windowStart, windowEnd, newProgMap, newChanMap)
+		cCount, pCount, errParse := parseXMLTVStream(reader, windowStart, windowEnd, newProgMap, newChannels, newIndex)
 		resp.Body.Close()
 
 		if errParse != nil {
@@ -324,10 +425,11 @@ func (e *EPGEnricher) RefreshAll(force bool) {
 
 	e.mu.Lock()
 	e.programsMap = newProgMap
-	e.channelsMap = newChanMap
+	e.channels = newChannels
+	e.channelIndex = newIndex
 	e.mu.Unlock()
 
-	log.Printf("[iptv-proxy] External EPG index updated: total %d normalized channels ready for placeholder replacement.", len(newProgMap))
+	log.Printf("[iptv-proxy] External EPG index updated: total %d channels, %d schedule entries ready.", len(newChannels), len(newProgMap))
 }
 
 func (e *EPGEnricher) updateSourceStatus(id string, cCount, pCount int, lastErr string) {
@@ -347,14 +449,15 @@ func (e *EPGEnricher) updateSourceStatus(id string, cCount, pCount int, lastErr 
 	e.saveConfigUnlocked()
 }
 
-// NormalizeEPGChannelKey cleans channel names for resilient fuzzy matching.
+// NormalizeEPGChannelKey cleans channel names with word/token awareness so French & Quebec stations
+// like Radio-Canada, Télé-Québec, Casa, Canal+, and RDS are never corrupted.
 func NormalizeEPGChannelKey(s string) string {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	if s == "" {
 		return ""
 	}
 
-	// 1. Unicode accent mapping (French/Spanish/Latin characters)
+	// 1. Remove accents (Latin/French)
 	var sb strings.Builder
 	for _, r := range s {
 		switch r {
@@ -376,53 +479,113 @@ func NormalizeEPGChannelKey(s string) string {
 	}
 	norm := sb.String()
 
-	// 2. Strip country/category prefix before delimiter '|', ':', '-'
+	// 2. Strip bracketed country tags like [CA], (CA), [QC], (QC), |CA|, |QC|, [FR], (US)
+	bracketPrefixes := []string{"[CA]", "(CA)", "[QC]", "(QC)", "|CA|", "|QC|", "[FR]", "(FR)", "[US]", "(US)", "[UK]", "(UK)"}
+	for _, bp := range bracketPrefixes {
+		norm = strings.ReplaceAll(norm, bp, " ")
+	}
+
+	// 3. Strip leading prefix before delimiter '|', ':', '-'
 	for _, sep := range []string{"|", ":"} {
 		if idx := strings.Index(norm, sep); idx >= 0 && idx < 20 {
-			norm = strings.TrimSpace(norm[idx+1:])
+			prefix := strings.TrimSpace(norm[:idx])
+			// If prefix is short country/group code (CA, QC, FR, US, VIP, etc.), strip it
+			if len(prefix) <= 6 {
+				norm = strings.TrimSpace(norm[idx+1:])
+			}
 		}
 	}
 
-	// 3. Strip quality tags and keywords
-	repl := []string{
-		"FHD", "", "UHD", "", "4K", "", "HEVC", "", "H265", "", "1080P", "", "720P", "",
-		"60FPS", "", "50FPS", "", "RAW", "", "HD", "", "SD", "", "BACKUP", "", "VIP", "",
-		"PLUS", "+", "CAN", "", "QUEBEC", "", "QC", "", "CA", "", "FR", "", "US", "",
-	}
-	r := strings.NewReplacer(repl...)
-	norm = r.Replace(norm)
+	// 4. Tokenize by separators (spaces, dots, underscores, dashes, slashes, brackets)
+	words := strings.FieldsFunc(norm, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '_' || r == '-' || r == '.' || r == '/' || r == '(' || r == ')' || r == '[' || r == ']' || r == '|' || r == ':'
+	})
 
-	// 4. Keep only alphanumeric
+	// Noise words to drop ONLY when appearing as whole tokens
+	noiseTokens := map[string]bool{
+		"FHD": true, "UHD": true, "4K": true, "HEVC": true, "H265": true, "1080P": true, "720P": true,
+		"60FPS": true, "50FPS": true, "RAW": true, "HD": true, "SD": true, "BACKUP": true, "VIP": true,
+		"LOCAL": true, "EAST": true, "WEST": true, "EST": true, "OUEST": true, "PLUS": false,
+		"CA": true, "QC": true, "FR": true, "US": true, "CAN": true, "CANAL": false,
+	}
+
+	var filtered []string
+	for _, w := range words {
+		wClean := strings.TrimSpace(w)
+		if wClean == "" {
+			continue
+		}
+		if noiseTokens[wClean] {
+			continue
+		}
+		filtered = append(filtered, wClean)
+	}
+
+	// Build combined clean alphanumeric key (keeping '+')
 	var clean strings.Builder
-	for _, ch := range norm {
-		if unicode.IsLetter(ch) || unicode.IsDigit(ch) {
-			clean.WriteRune(unicode.ToLower(ch))
+	for _, w := range filtered {
+		for _, ch := range w {
+			if unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '+' {
+				clean.WriteRune(unicode.ToLower(ch))
+			}
 		}
 	}
 	res := clean.String()
 
-	// 5. Common French / Quebec channel alias normalization
+	// 5. Canonical Quebec & French channel aliases
 	switch {
-	case strings.HasPrefix(res, "superecran") && !strings.Contains(res, "2") && !strings.Contains(res, "3") && !strings.Contains(res, "4"):
-		return "superecran1"
-	case strings.HasPrefix(res, "cinepop"):
-		return "cinepop"
-	case strings.Contains(res, "radiocanada") || strings.Contains(res, "icitele"):
+	case strings.Contains(res, "radiocanada") || strings.Contains(res, "icitele") || strings.Contains(res, "cbft") || res == "src":
 		return "radiocanada"
 	case strings.Contains(res, "icirdi") || res == "rdi":
 		return "rdi"
-	case strings.Contains(res, "tvasports") && !strings.Contains(res, "2"):
-		return "tvasports1"
-	case res == "tva" || strings.HasPrefix(res, "tvamontreal") || strings.HasPrefix(res, "tvaquebec"):
-		return "tva"
-	case res == "rds" || res == "rds1":
-		return "rds1"
-	case strings.Contains(res, "telequebec"):
+	case strings.Contains(res, "telequebec") || strings.Contains(res, "civq"):
 		return "telequebec"
-	case strings.Contains(res, "noovo"):
+	case strings.Contains(res, "tvasports2") || res == "tvasports2":
+		return "tvasports2"
+	case strings.Contains(res, "tvasports") || res == "tvasports":
+		return "tvasports1"
+	case res == "tva" || strings.HasPrefix(res, "tvamontreal") || strings.HasPrefix(res, "tvaquebec") || strings.Contains(res, "cftm"):
+		return "tva"
+	case res == "rds" || res == "rds1" || strings.Contains(res, "reseaudessports"):
+		return "rds1"
+	case res == "rds2":
+		return "rds2"
+	case strings.Contains(res, "rdsinfo"):
+		return "rdsinfo"
+	case strings.Contains(res, "noovo") || strings.Contains(res, "cfjp") || strings.Contains(res, "vtele"):
 		return "noovo"
-	case strings.Contains(res, "lcn"):
+	case strings.Contains(res, "lcn") || strings.Contains(res, "canalnouvelles"):
 		return "lcn"
+	case strings.Contains(res, "superecran4"):
+		return "superecran4"
+	case strings.Contains(res, "superecran3"):
+		return "superecran3"
+	case strings.Contains(res, "superecran2"):
+		return "superecran2"
+	case strings.Contains(res, "superecran"):
+		return "superecran1"
+	case strings.Contains(res, "cinepop"):
+		return "cinepop"
+	case strings.Contains(res, "canald"):
+		return "canald"
+	case strings.Contains(res, "canalvie"):
+		return "canalvie"
+	case strings.Contains(res, "casa"):
+		return "casa"
+	case strings.Contains(res, "ztele") || res == "canalz":
+		return "ztele"
+	case strings.Contains(res, "evasion"):
+		return "evasion"
+	case strings.Contains(res, "historia"):
+		return "historia"
+	case strings.Contains(res, "seriesplus") || strings.Contains(res, "series+"):
+		return "seriesplus"
+	case strings.Contains(res, "vrak"):
+		return "vrak"
+	case strings.Contains(res, "meteomedia"):
+		return "meteomedia"
+	case strings.Contains(res, "canal+") || strings.Contains(res, "canalplus"):
+		return "canalplus"
 	}
 
 	return res
@@ -449,7 +612,7 @@ func parseXMLTVTimestamp(s string) (time.Time, error) {
 		clean := s[:14]
 		t, err := time.Parse("20060102150405", clean)
 		if err == nil {
-			// Parse timezone offset if present (+0000, -0400, etc.)
+			// Parse timezone offset (+0000, -0400, etc.)
 			if len(s) >= 20 && (s[15] == '+' || s[15] == '-') {
 				offsetStr := s[15:20]
 				var sign int = 1
@@ -459,7 +622,6 @@ func parseXMLTVTimestamp(s string) (time.Time, error) {
 				var hours, mins int
 				fmt.Sscanf(offsetStr[1:], "%02d%02d", &hours, &mins)
 				zoneOffset := time.Duration(sign*(hours*3600+mins*60)) * time.Second
-				// Convert to UTC
 				t = t.Add(-zoneOffset)
 			}
 			return t, nil
@@ -468,13 +630,20 @@ func parseXMLTVTimestamp(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid xmltv time %q", s)
 }
 
-func parseXMLTVStream(r io.Reader, winStart, winEnd time.Time, pMap map[string][]EPGProgram, cMap map[string]string) (int, int, error) {
+func parseXMLTVStream(
+	r io.Reader,
+	winStart, winEnd time.Time,
+	pMap map[string][]EPGProgram,
+	cMap map[string]EPGChannel,
+	indexMap map[string]string,
+) (int, int, error) {
 	decoder := xml.NewDecoder(r)
 	cCount := 0
 	pCount := 0
 
 	var curChanID string
 	var curChanNames []string
+	var curChanIcon string
 
 	for {
 		tok, err := decoder.Token()
@@ -490,6 +659,7 @@ func parseXMLTVStream(r io.Reader, winStart, winEnd time.Time, pMap map[string][
 			if el.Name.Local == "channel" {
 				curChanID = ""
 				curChanNames = curChanNames[:0]
+				curChanIcon = ""
 				for _, attr := range el.Attr {
 					if attr.Name.Local == "id" {
 						curChanID = attr.Value
@@ -499,15 +669,12 @@ func parseXMLTVStream(r io.Reader, winStart, winEnd time.Time, pMap map[string][
 				var name string
 				if errD := decoder.DecodeElement(&name, &el); errD == nil && name != "" {
 					curChanNames = append(curChanNames, name)
-					normKey := NormalizeEPGChannelKey(name)
-					if normKey != "" {
-						cMap[normKey] = name
+				}
+			} else if el.Name.Local == "icon" && curChanID != "" {
+				for _, attr := range el.Attr {
+					if attr.Name.Local == "src" {
+						curChanIcon = attr.Value
 					}
-					idKey := NormalizeEPGChannelKey(curChanID)
-					if idKey != "" {
-						cMap[idKey] = name
-					}
-					cCount++
 				}
 			} else if el.Name.Local == "programme" {
 				var chanAttr, startAttr, stopAttr string
@@ -538,30 +705,104 @@ func parseXMLTVStream(r io.Reader, winStart, winEnd time.Time, pMap map[string][
 								Start:       startTime,
 								End:         stopTime,
 							}
-							keys := []string{NormalizeEPGChannelKey(chanAttr)}
-							for _, k := range keys {
-								if k != "" {
-									pMap[k] = append(pMap[k], prog)
-									pCount++
+							if chanAttr != "" {
+								pMap[chanAttr] = append(pMap[chanAttr], prog)
+								// Also index under normalized chan ID
+								normID := NormalizeEPGChannelKey(chanAttr)
+								if normID != "" && normID != chanAttr {
+									pMap[normID] = append(pMap[normID], prog)
 								}
+								pCount++
 							}
 						}
 					}
 				}
+			}
+		case xml.EndElement:
+			if el.Name.Local == "channel" && curChanID != "" {
+				cMap[curChanID] = EPGChannel{
+					ID:           curChanID,
+					DisplayNames: append([]string(nil), curChanNames...),
+					Icon:         curChanIcon,
+				}
+				// Register in index
+				rawKey := strings.ToLower(strings.TrimSpace(curChanID))
+				indexMap[rawKey] = curChanID
+
+				normID := NormalizeEPGChannelKey(curChanID)
+				if normID != "" {
+					indexMap[normID] = curChanID
+				}
+				for _, dName := range curChanNames {
+					normName := NormalizeEPGChannelKey(dName)
+					if normName != "" {
+						indexMap[normName] = curChanID
+					}
+				}
+				cCount++
+				curChanID = ""
 			}
 		}
 	}
 	return cCount, pCount, nil
 }
 
-// LookupProgrammes returns upcoming programmes matching channel name or epg_id.
+// ResolveChannelEPGID finds the best XMLTV channel ID for a stream using:
+// 1. Manual user overrides (/data/epg_mappings.json)
+// 2. Existing original epg_channel_id if already valid
+// 3. Normalized fuzzy matching across all external XMLTV channels and display names
+func (e *EPGEnricher) ResolveChannelEPGID(streamID, channelName, origEPGID string) string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	// 1. Custom overrides (by stream ID, exact name, or normalized name)
+	if e.customMappings != nil {
+		if target, ok := e.customMappings[streamID]; ok && target != "" {
+			return target
+		}
+		if target, ok := e.customMappings[channelName]; ok && target != "" {
+			return target
+		}
+		normName := NormalizeEPGChannelKey(channelName)
+		if target, ok := e.customMappings[normName]; ok && target != "" {
+			return target
+		}
+	}
+
+	// 2. If origEPGID is already a known channel in our index, keep it
+	if origEPGID != "" {
+		if _, ok := e.channels[origEPGID]; ok {
+			return origEPGID
+		}
+		if canonID, ok := e.channelIndex[strings.ToLower(origEPGID)]; ok {
+			return canonID
+		}
+		if canonID, ok := e.channelIndex[NormalizeEPGChannelKey(origEPGID)]; ok {
+			return canonID
+		}
+	}
+
+	// 3. Match by normalized channel name
+	normKey := NormalizeEPGChannelKey(channelName)
+	if normKey != "" {
+		if canonID, ok := e.channelIndex[normKey]; ok {
+			return canonID
+		}
+	}
+
+	// 4. Fallback to origEPGID if set, even if not in external index
+	return origEPGID
+}
+
+// LookupProgrammes returns upcoming programmes matching channel name, streamID, or epgID.
 func (e *EPGEnricher) LookupProgrammes(channelName, epgID string) []EPGProgram {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	candidates := []string{
-		NormalizeEPGChannelKey(channelName),
+		epgID,
 		NormalizeEPGChannelKey(epgID),
+		NormalizeEPGChannelKey(channelName),
 	}
 
 	for _, k := range candidates {
@@ -571,12 +812,16 @@ func (e *EPGEnricher) LookupProgrammes(channelName, epgID string) []EPGProgram {
 		if progs, ok := e.programsMap[k]; ok && len(progs) > 0 {
 			return progs
 		}
+		if canonID, ok := e.channelIndex[k]; ok {
+			if progs, ok2 := e.programsMap[canonID]; ok2 && len(progs) > 0 {
+				return progs
+			}
+		}
 	}
 	return nil
 }
 
-// EnrichXtreamEPGListings takes the Xtream Codes player_api JSON epg_listings and replaces
-// dummy "CINEMA" / "NO INFORMATION" placeholders with real titles from the external EPG index.
+// EnrichXtreamEPGListings enriches Xtream Codes player_api JSON epg_listings.
 func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawListings []interface{}) []interface{} {
 	progs := e.LookupProgrammes(channelName, epgID)
 	if len(progs) == 0 {
@@ -584,7 +829,6 @@ func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawList
 	}
 
 	now := time.Now()
-	// If upstream had 0 listings, build synthetic listings from our external EPG
 	if len(rawListings) == 0 {
 		out := make([]interface{}, 0, len(progs))
 		for idx, p := range progs {
@@ -603,14 +847,13 @@ func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawList
 				"start_timestamp": fmt.Sprint(p.Start.Unix()),
 				"stop_timestamp":  fmt.Sprint(p.End.Unix()),
 			})
-			if len(out) >= 10 {
+			if len(out) >= 12 {
 				break
 			}
 		}
 		return out
 	}
 
-	// Upstream had listings: check for placeholder titles and replace them
 	for _, item := range rawListings {
 		listingMap, ok := item.(map[string]interface{})
 		if !ok {
@@ -624,7 +867,6 @@ func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawList
 		}
 
 		if IsPlaceholderEPGTitle(decodedTitle) {
-			// Find matching external programme by time slot
 			startUnixStr := fmt.Sprint(listingMap["start_timestamp"])
 			var startSec int64
 			fmt.Sscanf(startUnixStr, "%d", &startSec)
@@ -634,7 +876,6 @@ func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawList
 			}
 
 			for _, p := range progs {
-				// Slot overlap check
 				if (slotTime.Equal(p.Start) || slotTime.After(p.Start)) && slotTime.Before(p.End) {
 					listingMap["title"] = base64.StdEncoding.EncodeToString([]byte(p.Title))
 					if p.Description != "" {
@@ -649,23 +890,115 @@ func (e *EPGEnricher) EnrichXtreamEPGListings(channelName, epgID string, rawList
 	return rawListings
 }
 
-// EnrichXMLTV replaces placeholder titles in raw upstream XMLTV and appends missing programmes.
-func (e *EPGEnricher) EnrichXMLTV(xmlData []byte, liveChannels []StreamRoutingTarget) []byte {
-	if len(xmlData) == 0 {
-		return xmlData
-	}
-	content := string(xmlData)
+// EnrichXMLTV creates or enriches the complete XMLTV guide requested by TiviMate & other players.
+// It injects full <channel> and <programme> schedules for all matched live streams and external channels.
+func (e *EPGEnricher) EnrichXMLTV(rawXML []byte, liveChannels []StreamRoutingTarget) []byte {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 
-	// 1. Replace classic XMLTV placeholder tags like <title lang="...">CINEMA</title>
-	placeholders := []string{"CINEMA", "Cinéma", "cinema", "FILM", "Film", "NO INFORMATION", "No Information", "NO EPG"}
-	for _, ph := range placeholders {
-		target := fmt.Sprintf(">%s<", ph)
-		if strings.Contains(content, target) {
-			// We can fast-replace with clean channel title if available
-			content = strings.ReplaceAll(content, ">CINEMA<", ">Film & Cinéma<")
-			content = strings.ReplaceAll(content, ">NO INFORMATION<", ">Émission télévisée<")
+	var buf bytes.Buffer
+	buf.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	buf.WriteString(`<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n")
+	buf.WriteString(`<tv generator-info-name="iptv-proxy-enricher">` + "\n")
+
+	emittedChannels := make(map[string]bool)
+	channelsToPrograms := make(map[string][]EPGProgram)
+
+	// 1. For every live channel provided by the proxy, emit XMLTV <channel> elements
+	for _, target := range liveChannels {
+		if target.StreamType != "live" || target.Name == "" {
+			continue
+		}
+
+		streamID := target.OriginalID
+		resolvedEPG := target.EPGChannelID
+		if resolvedEPG == "" {
+			resolvedEPG = e.ResolveChannelEPGID(streamID, target.Name, "")
+		}
+
+		// Channel IDs to register for this live stream in TiviMate
+		aliasIDs := []string{streamID}
+		if resolvedEPG != "" && resolvedEPG != streamID {
+			aliasIDs = append(aliasIDs, resolvedEPG)
+		}
+
+		// Find programs from our indexed external sources
+		var progs []EPGProgram
+		if resolvedEPG != "" {
+			if p, ok := e.programsMap[resolvedEPG]; ok && len(p) > 0 {
+				progs = p
+			} else if canonID, ok2 := e.channelIndex[NormalizeEPGChannelKey(resolvedEPG)]; ok2 {
+				if p2, ok3 := e.programsMap[canonID]; ok3 && len(p2) > 0 {
+					progs = p2
+				}
+			}
+		}
+		if len(progs) == 0 {
+			normName := NormalizeEPGChannelKey(target.Name)
+			if canonID, ok := e.channelIndex[normName]; ok {
+				progs = e.programsMap[canonID]
+			}
+		}
+
+		for _, cid := range aliasIDs {
+			if cid == "" || emittedChannels[cid] {
+				continue
+			}
+			emittedChannels[cid] = true
+
+			buf.WriteString(fmt.Sprintf(`  <channel id="%s">`+"\n", xmlEscape(cid)))
+			buf.WriteString(fmt.Sprintf(`    <display-name>%s</display-name>`+"\n", xmlEscape(target.Name)))
+			if resolvedEPG != "" && resolvedEPG != target.Name {
+				buf.WriteString(fmt.Sprintf(`    <display-name>%s</display-name>`+"\n", xmlEscape(resolvedEPG)))
+			}
+			buf.WriteString(`  </channel>` + "\n")
+
+			if len(progs) > 0 {
+				channelsToPrograms[cid] = progs
+			}
 		}
 	}
 
-	return []byte(content)
+	// 2. Also emit external XMLTV channels that might not have been matched to a proxy channel
+	for cid, ch := range e.channels {
+		if emittedChannels[cid] {
+			continue
+		}
+		emittedChannels[cid] = true
+		buf.WriteString(fmt.Sprintf(`  <channel id="%s">`+"\n", xmlEscape(cid)))
+		for _, dn := range ch.DisplayNames {
+			buf.WriteString(fmt.Sprintf(`    <display-name>%s</display-name>`+"\n", xmlEscape(dn)))
+		}
+		if ch.Icon != "" {
+			buf.WriteString(fmt.Sprintf(`    <icon src="%s" />`+"\n", xmlEscape(ch.Icon)))
+		}
+		buf.WriteString(`  </channel>` + "\n")
+
+		if progs, ok := e.programsMap[cid]; ok && len(progs) > 0 {
+			channelsToPrograms[cid] = progs
+		}
+	}
+
+	// 3. Emit <programme> elements for all channels
+	for cid, progs := range channelsToPrograms {
+		for _, p := range progs {
+			startStr := p.Start.UTC().Format("20060102150405 +0000")
+			stopStr := p.End.UTC().Format("20060102150405 +0000")
+			buf.WriteString(fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s">`+"\n", startStr, stopStr, xmlEscape(cid)))
+			buf.WriteString(fmt.Sprintf(`    <title lang="fr">%s</title>`+"\n", xmlEscape(p.Title)))
+			if p.Description != "" {
+				buf.WriteString(fmt.Sprintf(`    <desc lang="fr">%s</desc>`+"\n", xmlEscape(p.Description)))
+			}
+			buf.WriteString(`  </programme>` + "\n")
+		}
+	}
+
+	buf.WriteString("</tv>\n")
+	return buf.Bytes()
+}
+
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
 }

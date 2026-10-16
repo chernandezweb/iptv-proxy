@@ -197,8 +197,15 @@ func NewServer(cfgData *config.ProxyConfig) (*Config, error) {
 		Referer:        cfgData.Referer,
 	})
 	cfg.userManager = config.NewUserManager(usersPath, cfgData.User.String(), cfgData.Password.String())
-	cfg.ProxyConfig.UserManager = cfg.userManager
-	cfg.epgEnricher = NewEPGEnricher(filepath.Join(dataDir, "epg_sources.json"))
+	cfg.epgEnricher = NewEPGEnricher(filepath.Join(dataDir, "epg_sources.json"), filepath.Join(dataDir, "epg_mappings.json"))
+	cfg.epgEnricher.SetOnUpdate(func() {
+		if cfg.xmltvCache != nil {
+			cfg.xmltvCache.Clear()
+		}
+		if cfg.metadataCache != nil {
+			cfg.metadataCache.Clear()
+		}
+	})
 
 	// Apply SOCKS / VPN proxy if configured in provider.json
 	socks := cfg.ProxyConfig.Provider.GetSocksProxy()
@@ -667,6 +674,43 @@ func (c *Config) GetLiveStreamMetadataList() []StreamRoutingTarget {
 		}
 	}
 	return out
+}
+
+// EnsureLiveStreamMetadataLoaded pre-populates stream targets from the primary provider if the catalog is empty.
+func (c *Config) EnsureLiveStreamMetadataLoaded() {
+	if len(c.GetLiveStreamMetadataList()) > 0 {
+		return
+	}
+	enabled := c.GetEnabledProvidersOrFallback()
+	if len(enabled) == 0 {
+		return
+	}
+	client, err := getClientForProvider(enabled[0])
+	if err != nil {
+		return
+	}
+	live, err := client.GetLiveStreams("")
+	if err != nil || len(live) == 0 {
+		return
+	}
+	batch := make(map[string]StreamRoutingTarget, len(live))
+	for _, stream := range live {
+		rawID := fmt.Sprint(stream.ID)
+		epgID := stream.EPGChannelID
+		if c.epgEnricher != nil {
+			if matched := c.epgEnricher.ResolveChannelEPGID(rawID, stream.Name, epgID); matched != "" {
+				epgID = matched
+			}
+		}
+		batch[rawID] = StreamRoutingTarget{
+			ProviderIndex: 0,
+			OriginalID:    rawID,
+			StreamType:    "live",
+			Name:          stream.Name,
+			EPGChannelID:  epgID,
+		}
+	}
+	c.RegisterStreamTargetsBatch(batch)
 }
 
 // ResolveTargetStream resolves which upstream provider and original stream ID a client request belongs to.

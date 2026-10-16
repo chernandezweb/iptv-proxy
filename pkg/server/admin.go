@@ -115,6 +115,9 @@ func (c *Config) adminRoutes(r *gin.RouterGroup) {
 	admin.POST("/api/epg-sources", c.adminSaveEPGSources)
 	admin.DELETE("/api/epg-sources/:id", c.adminDeleteEPGSource)
 	admin.POST("/api/epg-sources/refresh", c.adminRefreshEPGSources)
+	admin.GET("/api/epg-channels", c.adminGetEPGChannels)
+	admin.GET("/api/epg-mappings", c.adminGetEPGMappings)
+	admin.POST("/api/epg-mappings", c.adminSaveEPGMappings)
 	admin.GET("/api/user-agent-settings", c.adminGetUserAgentSettings)
 	admin.POST("/api/user-agent-settings", c.adminSaveUserAgentSettings)
 	admin.GET("/api/vpn-proxy", c.adminGetVpnProxy)
@@ -1138,6 +1141,48 @@ func (c *Config) adminRefreshEPGSources(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"status":  "refreshing",
 		"message": "EPG sources refresh started in background",
+	})
+}
+
+func (c *Config) adminGetEPGChannels(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusOK, gin.H{"channels": []EPGChannel{}})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"channels": c.epgEnricher.GetEPGChannels(),
+	})
+}
+
+func (c *Config) adminGetEPGMappings(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusOK, gin.H{"mappings": map[string]string{}})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"mappings": c.epgEnricher.GetCustomMappings(),
+	})
+}
+
+func (c *Config) adminSaveEPGMappings(ctx *gin.Context) {
+	if c.epgEnricher == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "EPG enricher not initialized"})
+		return
+	}
+	var payload struct {
+		Mappings map[string]string `json:"mappings"`
+	}
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload: " + err.Error()})
+		return
+	}
+	c.epgEnricher.SaveCustomMappings(payload.Mappings)
+	if c.xmltvCache != nil {
+		c.xmltvCache.Clear()
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":   "success",
+		"mappings": c.epgEnricher.GetCustomMappings(),
 	})
 }
 

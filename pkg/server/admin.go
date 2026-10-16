@@ -978,26 +978,32 @@ func (c *Config) adminInspectStream(ctx *gin.Context) {
 		}
 	}
 
-	rawID := strings.TrimSuffix(streamID, ".ts")
-	rawID = strings.TrimSuffix(rawID, ".m3u8")
+	rawID := streamID
+	for _, sfx := range []string{".ts", ".m3u8", ".mp4", ".mkv", ".avi"} {
+		rawID = strings.TrimSuffix(rawID, sfx)
+	}
 
 	if rawID == "" && rawURL == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Missing stream_id or url parameter"})
 		return
 	}
 
-	// 1. Try attaching to an existing running multiplexed relay
-	if c.streamHub != nil && c.streamHub.TryAttachExistingRelay(ctx, rawID, streamID, rawURL) {
-		return
+	// 1. Live TV streams: try tapping shared relay or direct 1:1 stream in RAM (0 extra provider connections!)
+	if streamType == "live" && c.streamHub != nil {
+		if c.streamHub.TryAttachExistingRelay(ctx, rawID, streamID, rawURL) {
+			return
+		}
+		if c.streamHub.TryAttachDirectTap(ctx, rawID, streamID, rawURL) {
+			return
+		}
 	}
 
-	// 2. Try tapping into an active Direct 1:1 stream in RAM (0 extra provider connections!)
-	if c.streamHub != nil && c.streamHub.TryAttachDirectTap(ctx, rawID, streamID, rawURL) {
-		return
+	// 2. Direct streaming for Movies & Series (VOD with Range support) or fallback for Live TV
+	lookupID := streamID
+	if lookupID == "" {
+		lookupID = rawID
 	}
-
-	// 3. Fallback: stream directly from provider without consuming any client user slot
-	targetProv, origID := c.ResolveTargetStream(streamType, rawID)
+	targetProv, origID := c.ResolveTargetStream(streamType, lookupID)
 	base := strings.TrimRight(targetProv.XtreamBaseURL, "/")
 	ext := ""
 	if !strings.Contains(origID, ".") {
@@ -1013,7 +1019,7 @@ func (c *Config) adminInspectStream(ctx *gin.Context) {
 		ctx.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	log.Printf("[iptv-proxy] Admin Inspector: fallback upstream connection for %s -> %s", rawID, reqPath)
+	log.Printf("[iptv-proxy] Admin Inspector: streaming %s (%s) -> %s", streamType, lookupID, reqPath)
 	c.xtreamStream(ctx, parsedURL)
 }
 

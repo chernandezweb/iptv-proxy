@@ -185,7 +185,7 @@ func (c *Config) stream(ctx *gin.Context, oriURL *url.URL) {
 	}
 
 	var tap *directStreamTap
-	if c.streamHub != nil {
+	if c.streamHub != nil && isLiveBroadcast && !forwardRange {
 		tap = c.streamHub.RegisterDirectTap(ctx.Param("id"), oriURL.Path, resp.Header.Get("Content-Type"))
 		defer c.streamHub.UnregisterDirectTap(tap)
 	}

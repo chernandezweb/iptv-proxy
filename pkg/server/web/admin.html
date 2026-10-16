@@ -5617,7 +5617,15 @@ services:<br>
                 streamId = parts[0];
             }
 
-            const rawID = streamId.replace(/\.(ts|m3u8|mp4)$/i, '');
+            // Extract file extension cleanly (.mkv, .mp4, .ts, etc.)
+            let ext = '';
+            const dotIdx = streamId.lastIndexOf('.');
+            if (dotIdx !== -1) {
+                ext = streamId.substring(dotIdx);
+            } else {
+                ext = (streamType === 'live') ? '.ts' : '.mp4';
+            }
+            const rawID = dotIdx !== -1 ? streamId.substring(0, dotIdx) : streamId;
 
             // 1. Look up user's actual password from state
             const matchedUser = (state.users || []).find(u => u.username === username);
@@ -5626,11 +5634,11 @@ services:<br>
             // 2. Format proper client player URL for display
             let displayUrl = uri;
             if (!displayUrl.startsWith('http://') && !displayUrl.startsWith('https://')) {
-                displayUrl = `${window.location.origin}/${streamType}/${encodeURIComponent(username || 'admin')}/${encodeURIComponent(userPass)}/${encodeURIComponent(rawID)}.ts`;
+                displayUrl = `${window.location.origin}/${streamType}/${encodeURIComponent(username || 'admin')}/${encodeURIComponent(userPass)}/${encodeURIComponent(rawID)}${ext}`;
             }
 
-            // 3. Admin zero-slot tap endpoint for internal video playback
-            const inspectApiUrl = `${window.location.origin}/admin/api/inspect?stream_id=${encodeURIComponent(rawID)}&stream_type=${encodeURIComponent(streamType)}&url=${encodeURIComponent(uri)}`;
+            // 3. Admin zero-slot tap / proxy endpoint for video playback
+            const inspectApiUrl = `${window.location.origin}/admin/api/inspect?stream_id=${encodeURIComponent(streamId)}&stream_type=${encodeURIComponent(streamType)}&url=${encodeURIComponent(uri)}`;
 
             const title = chanName ? `📺 ${chanName} (${username})` : `Session: ${username || 'Direct'}`;
             open(displayUrl, title, inspectApiUrl);
@@ -5645,11 +5653,24 @@ services:<br>
 
             // Actual video playback source: use inspectApiUrl if provided, otherwise streamUrl
             const playbackUrl = inspectApiUrl || streamUrl;
-
             const video = el('inspVideo');
-            const isHLS = playbackUrl.includes('.m3u8') || streamUrl.includes('.m3u8');
 
-            resetUI(title, isHLS ? 'HLS (M3U8 Manifest)' : (inspectApiUrl ? 'HTTP MPEG-TS (Zero-Slot Tap)' : 'HTTP MPEG-TS (Direct)'));
+            const checkUrl = (playbackUrl + ' ' + streamUrl).toLowerCase();
+            const isHLS = checkUrl.includes('.m3u8');
+            const isVOD = streamUrl.includes('/movie/') || streamUrl.includes('/series/') || 
+                          checkUrl.includes('.mp4') || checkUrl.includes('.mkv') || 
+                          checkUrl.includes('.avi') || checkUrl.includes('.webm');
+
+            let protocolLabel = 'HTTP MPEG-TS (Zero-Slot Tap)';
+            if (isHLS) {
+                protocolLabel = 'HLS (M3U8 Manifest)';
+            } else if (isVOD) {
+                protocolLabel = 'VOD Media (MP4 / MKV Container)';
+            } else if (!inspectApiUrl) {
+                protocolLabel = 'HTTP MPEG-TS (Direct)';
+            }
+
+            resetUI(title, protocolLabel);
 
             if (isHLS && window.Hls && Hls.isSupported()) {
                 hlsPlayer = new Hls({ enableWorker: true, lowLatencyMode: true });
@@ -5679,7 +5700,7 @@ services:<br>
                         setStatus(`ERROR: ${data.details}`, 'var(--danger)');
                     }
                 });
-            } else if (window.mpegts && mpegts.isSupported()) {
+            } else if (!isVOD && window.mpegts && mpegts.isSupported()) {
                 try {
                     tsPlayer = mpegts.createPlayer({
                         type: 'mse',
@@ -5715,16 +5736,35 @@ services:<br>
                     });
 
                     tsPlayer.on(mpegts.Events.ERROR, (errType, errDetail) => {
+                        if (errDetail === 'FormatUnsupported' || errType === 'DemuxError') {
+                            console.warn('MPEG-TS unsupported for this stream; falling back to native HTML5 playback');
+                            try { tsPlayer.destroy(); } catch(e){}
+                            tsPlayer = null;
+                            video.src = playbackUrl;
+                            video.play().catch(() => {});
+                            setStatus('PLAYING (Native Fallback)', 'var(--success)');
+                            return;
+                        }
                         setStatus(`ERR: ${errDetail}`, 'var(--danger)');
                     });
                 } catch (e) {
                     video.src = playbackUrl;
                     video.play().catch(() => {});
+                    setStatus('PLAYING (Native Fallback)', 'var(--success)');
                 }
             } else {
+                // Native HTML5 video player for VOD (Movies & Series)
                 video.src = playbackUrl;
                 video.play().catch(() => {});
-                setStatus('PLAYING (Native)', 'var(--success)');
+                setStatus('PLAYING (VOD Media)', 'var(--success)');
+                el('inspVCodec').textContent = isVOD ? 'MP4 / MKV Video' : 'Native Video';
+                el('inspACodec').textContent = 'AAC / Multi-channel';
+
+                video.onloadedmetadata = () => {
+                    if (video.videoWidth) {
+                        el('inspRes').textContent = `${video.videoWidth}x${video.videoHeight}`;
+                    }
+                };
             }
 
             statsTimer = setInterval(() => {
